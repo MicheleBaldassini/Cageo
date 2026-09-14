@@ -137,20 +137,20 @@ SIGNIFICANCE_COLORS = ListedColormap([
 regressors = [
     tree.DecisionTreeRegressor(random_state=RANDOM_SEED),
     # KNeighborsRegressor(),
-    RandomForestRegressor(n_jobs=1, random_state=RANDOM_SEED),
-    GradientBoostingRegressor(random_state=RANDOM_SEED),
-    XGBRegressor(n_jobs=1, random_state=RANDOM_SEED),
-    LGBMRegressor(verbose=-1, n_jobs=1, random_state=RANDOM_SEED)
+    # RandomForestRegressor(n_jobs=1, random_state=RANDOM_SEED),
+    # GradientBoostingRegressor(random_state=RANDOM_SEED),
+    # XGBRegressor(n_jobs=1, random_state=RANDOM_SEED),
+    # LGBMRegressor(verbose=-1, n_jobs=1, random_state=RANDOM_SEED)
 ]
 
 
 # Define the hyperparameter search space configurations for nested cross-validation tuning.
 parameters_reg = {
     "DecisionTreeRegressor": {
-        "max_depth": [None, 3, 5, 10],
-        "min_samples_split": [2, 4, 6],
-        "min_samples_leaf": [1, 2, 3],
-        "max_features": [None, "sqrt", "log2"],
+        "max_depth": [None, 3], #, 5, 10],
+        "min_samples_split": [2, 4], #, 6],
+        # "min_samples_leaf": [1, 2, 3],
+        # "max_features": [None, "sqrt", "log2"],
     },
     "KNeighborsRegressor": {
         "n_neighbors": [3, 5, 7, 9],

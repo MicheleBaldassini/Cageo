@@ -257,7 +257,7 @@ if __name__ == "__main__":
             first_train_groups = slope_groups_train.iloc[first_train_idx].loc[first_train_processed_idx].nunique()
             first_val_groups = slope_groups_train.iloc[first_val_idx].nunique()
             print(
-                f"[First Partition] Train (Processed): {len(first_train_processed_idx)} samples ({first_train_groups} slopes), "
+                f"Train: {len(first_train_processed_idx)} samples ({first_train_groups} slopes), "
                 f"Val: {len(first_val_idx)} samples ({first_val_groups} slopes)"
             )
 

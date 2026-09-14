@@ -1,0 +1,20 @@
+feature,selection_count,selection_frequency,selected_final
+Soil depth downstream [m],30,1.0,True
+Unit weight [kN/m3],0,0.0,False
+Undrained Shear Strength [kPa],0,0.0,False
+Saturated permeability [m/s],0,0.0,False
+Soil Type [-],0,0.0,False
+Slope angle [°],0,0.0,False
+Slope length [m],0,0.0,False
+Total length [m],0,0.0,False
+Slope height [m],0,0.0,False
+Total height Upstream [m],0,0.0,False
+Total height Downstream [m],0,0.0,False
+Soil depth upstream [m],0,0.0,False
+Bedrock depth upstream [m],0,0.0,False
+Bedrock depth downstream [m],0,0.0,False
+Initial piezometric surface depth - upstream [m],0,0.0,False
+Initial piezometric surface depth - downstream [m],0,0.0,False
+Return period of precipitation [years],0,0.0,False
+Accumulated precipitation [mm],0,0.0,False
+Precipitation duration [hrs],0,0.0,False

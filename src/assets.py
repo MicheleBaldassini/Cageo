@@ -18,7 +18,14 @@ from sklearn.base import BaseEstimator, RegressorMixin, clone
 
 from plots.beeswarm import beeswarm
 from plots.waterfall import waterfall
-from config import BASE_DIR, NORMALIZATION
+from config import (
+    BASE_DIR,
+    NORMALIZATION,
+    RETURN_PERIOD_COLUMN,
+    ACCUMULATED_RAIN_COLUMN,
+    RAIN_DURATION_COLUMN,
+    ALL_TARGETS
+)
 
 
 def sanitize_params(params):

@@ -2,10 +2,12 @@
 """Generate SHAP explanations for external inference."""
 
 import os
+import sys
 import pickle
 import numpy as np
 import pandas as pd
 import shap
+import types
 
 from config import (
     regressors,
@@ -18,10 +20,12 @@ from config import (
     RETURN_PERIOD_COLUMN,
     TARGET_TO_DATASET,
 )
-from assets import build_explanation, save_waterfall_plot
+from assets import build_explainer, build_explanation, save_waterfall_plot
 
 
 def run_real_cases_inference(slope="drained"):
+    """Generate SHAP waterfall plots for the inference samples."""
+    
     """Compute and plot SHAP waterfall explanations for external dataset."""
     print("\n=== INFERENCE SHAP ===")
 
@@ -46,6 +50,7 @@ def run_real_cases_inference(slope="drained"):
 
         for reg_model in regressors:
             model_name = reg_model.__class__.__name__
+
             inference_out_dir = os.path.join(FIGURES_DIR, "shap_inference", "drained", target, model_name)
             os.makedirs(inference_out_dir, exist_ok=True)
 
@@ -57,14 +62,19 @@ def run_real_cases_inference(slope="drained"):
             feature_names = [NAME_TO_SYMBOL.get(n, n) for n in features]
 
             # Extract the raw input features and apply the scaler.
-            X_bg_raw = df_background[features]#.to_numpy(float)
-            X_real_raw = df_real[features]#.to_numpy(float)
+            X_bg_raw = df_background[features]
+            X_real_raw = df_real[features]
             
             X_bg = scaler.transform(X_bg_raw) if scaler else X_bg_raw
             X_real = scaler.transform(X_real_raw) if scaler else X_real_raw
 
-            # Compute the SHAP values using the background distribution.
-            explanation_real = build_explanation(bundle["model"], model_name, X_bg, X_real, X_real_raw, feature_names, RANDOM_SEED)
+            bundle["model"] = bundle.get("model")
+
+            # Build the explainer
+            explainer = build_explainer(bundle["model"], model_name, X_bg, feature_names, RANDOM_SEED)
+
+            # Compute the SHAP values using the pre-built explainer
+            explanation_real = build_explanation(explainer, model_name, X_real, X_real_raw, feature_names)
 
             # Generate a waterfall plot for each instance in the external dataset.
             for pos, (_, row) in enumerate(df_real.iterrows()):

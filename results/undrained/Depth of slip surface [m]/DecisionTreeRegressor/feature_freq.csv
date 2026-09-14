@@ -1,0 +1,20 @@
+feature,selection_count,selection_frequency,selected_final
+Bedrock depth downstream [m],30,1.0,True
+Slope length [m],28,0.9333333333333333,True
+Initial piezometric surface depth - upstream [m],27,0.9,True
+Initial piezometric surface depth - downstream [m],5,0.16666666666666666,False
+Slope angle [°],2,0.06666666666666667,False
+Return period of precipitation [years],1,0.03333333333333333,False
+Unit weight [kN/m3],0,0.0,False
+Undrained Shear Strength [kPa],0,0.0,False
+Saturated permeability [m/s],0,0.0,False
+Soil Type [-],0,0.0,False
+Total length [m],0,0.0,False
+Slope height [m],0,0.0,False
+Total height Upstream [m],0,0.0,False
+Total height Downstream [m],0,0.0,False
+Soil depth upstream [m],0,0.0,False
+Soil depth downstream [m],0,0.0,False
+Bedrock depth upstream [m],0,0.0,False
+Accumulated precipitation [mm],0,0.0,False
+Precipitation duration [hrs],0,0.0,False

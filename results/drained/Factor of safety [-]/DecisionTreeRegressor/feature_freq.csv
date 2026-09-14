@@ -1,0 +1,21 @@
+feature,selection_count,selection_frequency,selected_final
+Unit weight [kN/m3],30,1.0,True
+Effective cohesion [kPa],30,1.0,True
+Effective friction angle [°],30,1.0,True
+Slope angle [°],30,1.0,True
+Bedrock depth downstream [m],30,1.0,True
+Initial piezometric surface depth - upstream [m],30,1.0,True
+Saturated permeability [m/s],29,0.9666666666666667,True
+Precipitation duration [hrs],23,0.7666666666666667,True
+Slope length [m],21,0.7,True
+Soil Type [-],10,0.3333333333333333,False
+Bedrock depth upstream [m],9,0.3,False
+Total height Upstream [m],8,0.26666666666666666,False
+Return period of precipitation [years],7,0.23333333333333334,False
+Accumulated precipitation [mm],6,0.2,False
+Slope height [m],5,0.16666666666666666,False
+Total height Downstream [m],5,0.16666666666666666,False
+Total length [m],3,0.1,False
+Soil depth upstream [m],1,0.03333333333333333,False
+Soil depth downstream [m],0,0.0,False
+Initial piezometric surface depth - downstream [m],0,0.0,False

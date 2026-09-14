@@ -1,0 +1,76 @@
+{
+    "drained": {
+        "Factor of safety [-]": {
+            "DecisionTreeRegressor": [
+                "Unit weight [kN/m3]",
+                "Effective cohesion [kPa]",
+                "Effective friction angle [°]",
+                "Saturated permeability [m/s]",
+                "Slope angle [°]",
+                "Slope length [m]",
+                "Bedrock depth downstream [m]",
+                "Initial piezometric surface depth - upstream [m]",
+                "Precipitation duration [hrs]"
+            ]
+        },
+        "Depth of slip surface [m]": {
+            "DecisionTreeRegressor": [
+                "Unit weight [kN/m3]",
+                "Effective cohesion [kPa]",
+                "Effective friction angle [°]",
+                "Saturated permeability [m/s]",
+                "Soil Type [-]",
+                "Slope angle [°]",
+                "Slope height [m]",
+                "Bedrock depth upstream [m]",
+                "Bedrock depth downstream [m]",
+                "Initial piezometric surface depth - upstream [m]",
+                "Initial piezometric surface depth - downstream [m]",
+                "Precipitation duration [hrs]"
+            ]
+        },
+        "Final Piezometric surface depth - upstream [m]": {
+            "DecisionTreeRegressor": [
+                "Saturated permeability [m/s]",
+                "Bedrock depth downstream [m]",
+                "Initial piezometric surface depth - upstream [m]",
+                "Accumulated precipitation [mm]"
+            ]
+        },
+        "Final Piezometric surface depth - downstream [m]": {
+            "DecisionTreeRegressor": [
+                "Saturated permeability [m/s]",
+                "Bedrock depth downstream [m]",
+                "Initial piezometric surface depth - downstream [m]"
+            ]
+        }
+    },
+    "undrained": {
+        "Factor of safety [-]": {
+            "DecisionTreeRegressor": [
+                "Unit weight [kN/m3]",
+                "Undrained Shear Strength [kPa]",
+                "Total height Upstream [m]",
+                "Soil depth downstream [m]"
+            ]
+        },
+        "Depth of slip surface [m]": {
+            "DecisionTreeRegressor": [
+                "Slope length [m]",
+                "Bedrock depth downstream [m]",
+                "Initial piezometric surface depth - upstream [m]"
+            ]
+        },
+        "Final Piezometric surface depth - upstream [m]": {
+            "DecisionTreeRegressor": [
+                "Soil depth upstream [m]",
+                "Initial piezometric surface depth - upstream [m]"
+            ]
+        },
+        "Final Piezometric surface depth - downstream [m]": {
+            "DecisionTreeRegressor": [
+                "Soil depth downstream [m]"
+            ]
+        }
+    }
+}
