@@ -21,14 +21,14 @@ The train and test partitions are generated from the datasets by executing `s1_p
 * ### Final upstream position of the water table
   * `train/drained_zwu.csv` and `test/drained_zwu.csv`
   * `train/undrained_zwu.csv` and `test/undrained_zwu.csv`\
-    These datasets contain the samples used for model development to predict the **final upstream position of the water table** ($`z_wu^final`$) under drained and undrained conditions, respectively.\
-    Samples with an initial upstream position of the water table equal to zero ($`z_wu^init = 0`$) are removed during preprocessing.
+    These datasets contain the samples used for model development to predict the **final upstream position of the water table** ($z_{wu}^{final}$) under drained and undrained conditions, respectively.\
+    Samples with an initial upstream position of the water table equal to zero ($`z_{wu}^{init} = 0`$) are removed during preprocessing.
 
 * ### Final downstream position of the water table
   * `train/drained_zwd.csv` and `test/drained_zwd.csv`
   * `train/undrained_zwd.csv` and `test/undrained_zwd.csv`\
-	These datasets contain the samples used for model development to predict the **final downstream position of the water table** ($`z_wd^final`$) under drained and undrained conditions, respectively.\
-	Samples with an initial downstream position of the water table equal to zero ($`z_wd^init = 0`$) are removed during preprocessing.
+	These datasets contain the samples used for model development to predict the **final downstream position of the water table** ($`z_{wd}^{final}`$) under drained and undrained conditions, respectively.\
+	Samples with an initial downstream position of the water table equal to zero ($`z_{wd}^{init} = 0`$) are removed during preprocessing.
 
 
 ## Mitigation measures
