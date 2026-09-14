@@ -47,7 +47,7 @@ python src/s2_feature_selection.py
 - **`s2_feature_selection.py`** performs sequential forward feature selection
   for every target, slope condition, and regressor.
   It repeats selection considering stratified cross-validation partitions and then evaluates the
-  models using R² and MAE.
+  models using $`R^2`$ and $`MAE`$.
 
 Outputs:
 
@@ -78,13 +78,13 @@ python src/s5_regplot.py
 ```
 
 - **`s4_boxplot.py`** reads the cross-validation score and ranks models
-  by their median R² or MAE. It generates boxplots for the prediction targets
+  by their median $`R^2`$ or $`MAE`$. It generates boxplots for the prediction targets
   and pairwise Wilcoxon signed-rank comparison matrices. The statistical
   results use Holm correction for multiple comparisons and are saved in
   `fig/holdout/`.
 
 - **`s5_regplot.py`** loads the true and predicted hold-out values.
-  It computes R² and MAE and generates regression plots
+  It computes $`R^2`$ and $`MAE`$ and generates regression plots
   comparing observations with model predictions. The resulting figures are
   organized by slope condition and target in `fig/holdout/`.
 
