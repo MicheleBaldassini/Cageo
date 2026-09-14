@@ -9,8 +9,8 @@ This project implements a machine learning workflow to evaluate the response of 
 
 ## Repository structure
 
-- **`dataset/`** contains a descrptions of the datasets and the instructions
-  to download them. See [`dataset/README.md`](dataset/README.md).
+- **`dataset/`** contains a descriptions of the datasets and the instructions
+  to download and use them. See [`dataset/README.md`](dataset/README.md).
 - **`src/`** contains the preprocessing, training, evaluation, explainability,
   and fuzzy-inference scripts. See [`src/README.md`](src/README.md).
 
