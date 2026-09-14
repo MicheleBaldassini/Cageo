@@ -44,7 +44,7 @@ pip install shap matplotlib seaborn pillow statsmodels scikit-fuzzy
 
 
 ## Dataset
-The dataset folder contains `D.1`, `D.2`, and `U` datasets.
+Download `D.1`, `D.2`, and `U` datasets and place them in the `dataset` folder in the project root directory, at the same level as the `src` folder.
 
 ```text
 dataset/
@@ -59,31 +59,7 @@ dataset/
 python src/s1_preprocessing.py
 ```
 - `s1_preprocessing.py`: generates the training and test partitions in `dataset/train/` and `dataset/test/`.
-<!-- 
-The script performs the following operations:
-  - **Concatenation**: Merges the intermediate drained datasets into a unified dataset (`D_drained.csv`), retaining only the features that are common across all intermediate files.
-  - **Target-Specific Split**: Creates isolated datasets for distinct targets (e.g., removing zero-value initial water tables for specific datasets) and splits them into an 80% training set and a 20% testing set (`TEST_SIZE = 0.20`).
 
-```text
-dataset/
-|-- ...
-|-- train/
-|   |-- <condition>_fos.csv
-|   |-- <condition>_zwu.csv
-|   |-- <condition>_zwd.csv
-|-- test/
-    |-- <condition>_fos.csv
-    |-- <condition>_zwu.csv
-    |-- <condition>_zwd.csv
-```
-`<condition>` is `drained` or `undrained`.
-
-- The `fos` datasets contain the samples used for model development to predict the **Factor of Safety** (`FoS`) and the **depth of the slip surface** ($`z_s`$) under drained and undrained conditions;
-- The `zwu`$ contain the samples used for model development to predict the **final upstream position of the water table** ($`z_{wu}^{\mathrm{final}}`$) under drained and undrained conditions, respectively.
-* Samples with an initial upstream position of the water table equal to zero ($`z_{wu}^{\mathrm{init}} = 0`$) are removed during preprocessing.
-- The `zwd` contain the samples used for model development to predict the **final upstream position of the water table** ($`z_{wd}^{\mathrm{final}}`$) under drained and undrained conditions, respectively.
-* Samples with an initial upstream position of the water table equal to zero ($`z_{wd}^{\mathrm{init}} = 0`$) are removed during preprocessing.
- -->
 
 ## Train and evaluate models
 

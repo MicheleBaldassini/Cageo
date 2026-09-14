@@ -1,6 +1,6 @@
 # Dataset Description
-The dataset used in the experiments  (`D.1`, `D.2`, `U`) can be found here: LINK.
-After downloading, place the dataset folder in the project root directory, at the same level as the src folder.
+The dataset used in the experiments  (`D.1`, `D.2`, `U`) can be found here: `LINK`.
+After downloading, place the datasets in the `dataset` folder in the project root directory, at the same level as the `src` folder.
 The train and test partitions are generated from the datasets by executing `s1_preprocessing.py`.
 
 ## Data Preprocessing (`s1_preprocessing.py`)
