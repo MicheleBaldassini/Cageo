@@ -16,7 +16,7 @@ The train and test partitions are generated from the datasets by executing `s1_p
 * ### Factor of Safety and Depth of the slip surface
   * `train/drained_fos.csv` and `test/drained_fos.csv`
   * `train/undrained_fos.csv` and `test/undrained_fos.csv`\
-	These datasets contain the samples used for model development to predict the **Factor of Safety** (`FoS`) and the **depth of the slip surface** (`z_s`) under drained and undrained conditions, respectively.
+	These datasets contain the samples used for model development to predict the **Factor of Safety** (`FoS`) and the **depth of the slip surface** ($`z_s`$) under drained and undrained conditions, respectively.
 
 * ### Final upstream position of the water table
   * `train/drained_zwu.csv` and `test/drained_zwu.csv`
