@@ -2,19 +2,14 @@
 """Shared utilities."""
 
 import os
-import sys
 import warnings
-# import matplotlib
-# matplotlib.use("Agg")
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import shap
 import logging
 from PIL import Image
-import types
-
-# import io
-import pickle
 
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.compose import ColumnTransformer
@@ -220,101 +215,3 @@ def save_waterfall_plot(local_explanation, output_path):
 
     with Image.open(output_path) as img:
         img.crop((50, 40, img.width, img.height - 45)).save(output_path)
-
-
-# Inject compatibility structures to allow the deserialization of legacy scikit-learn models.
-class IdentityLink:
-    def link(self, x): return x
-    def inverse(self, x): return x
-
-class LeastSquaresError:
-    K = 1
-    link = IdentityLink()
-
-    def __init__(self, *args, **kwargs): pass
-    def __call__(self, y, pred, sample_weight=None): 
-        return np.mean((y - pred) ** 2)
-    def negative_gradient(self, y, pred, **k): 
-        return y - pred
-    def update_terminal_regions(self, *args, **kwargs): pass
-    def get_init_raw_predictions(self, X, estimator): 
-        return estimator.predict(X).reshape(-1, 1)
-
-def patch_monotonic_cst(model):
-    """Traverse the model estimators and append missing monotonic-constraint attributes."""
-    if hasattr(model, "estimators_"):
-        # Flatten the estimator array and update each individual tree.
-        for est in np.ravel(model.estimators_):
-            if not hasattr(est, "monotonic_cst"):
-                est.monotonic_cst = None
-    else:
-        # Update the base model directly if it lacks the attribute.
-        if not hasattr(model, "monotonic_cst"):
-            model.monotonic_cst = None
-    return model
-
-# --- Custom Unpickler ---
-class LegacySklearnUnpickler(pickle.Unpickler):
-    def find_class(self, module, name):
-        if module == "sklearn.ensemble._gb_losses":
-            if name == "LeastSquaresError":
-                return LeastSquaresError
-            if name == "IdentityLink":
-                return IdentityLink
-        return super().find_class(module, name)
-
-def load_legacy_model(file_path):
-    with open(file_path, "rb") as f:
-        data = LegacySklearnUnpickler(f).load()
-    # Applica la patch a prescindere dal tipo di dato restituito
-    d = {"model": patch_monotonic_cst(data["model"]), "features": data["features"], "scaler": data["scaler"]}
-    return d
-
-'''
-# Inject compatibility structures to allow the deserialization of legacy scikit-learn GradientBoosting models.
-gb_losses = types.ModuleType("sklearn.ensemble._gb_losses")
-
-class IdentityLink:
-    """Implement a dummy identity link class to satisfy legacy model dependencies."""
-    def link(self, x): return x
-    def inverse(self, x): return x
-
-
-class LeastSquaresError:
-    """Implement a compatibility stub for the legacy LeastSquaresError class."""
-    K = 1
-    link = IdentityLink()
-
-    def __init__(self, *args, **kwargs): pass
-    
-    def __call__(self, y, pred, sample_weight=None): 
-        # Compute the mean squared error between true and predicted values.
-        return np.mean((y - pred) ** 2)
-        
-    def negative_gradient(self, y, pred, **k): 
-        # Calculate the residual errors.
-        return y - pred
-        
-    def update_terminal_regions(self, *args, **kwargs): pass
-    
-    def get_init_raw_predictions(self, X, estimator): 
-        # Extract initial raw predictions and reshape the output array.
-        return estimator.predict(X).reshape(-1, 1)
-
-# Register the compatibility classes within the system modules.
-gb_losses.LeastSquaresError = LeastSquaresError
-sys.modules["sklearn.ensemble._gb_losses"] = gb_losses
-
-def patch_monotonic_cst(model):
-    """Traverse the model estimators and append missing monotonic-constraint attributes."""
-    if hasattr(model, "estimators_"):
-        # Flatten the estimator array and update each individual tree.
-        for est in np.ravel(model.estimators_):
-            if not hasattr(est, "monotonic_cst"):
-                est.monotonic_cst = None
-    else:
-        # Update the base model directly if it lacks the attribute.
-        if not hasattr(model, "monotonic_cst"):
-            model.monotonic_cst = None
-    return model
-'''

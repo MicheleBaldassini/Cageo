@@ -19,29 +19,15 @@ from config import (
     RESULTS_DIR,
     RETURN_PERIOD_COLUMN,
     TARGET_TO_DATASET,
-    TARGET_FOS,
-    TARGET_SLIP_DEPTH,
-    TARGET_ZWU_FINAL,
-    TARGET_ZWD_FINAL
 )
-from assets import (
-    load_legacy_model,
-    build_explainer,
-    build_explanation,
-    save_waterfall_plot
-)
+from assets import build_explainer, build_explanation, save_waterfall_plot
 
 
 def run_real_cases_inference(slope="drained"):
     """Generate SHAP waterfall plots for the inference samples."""
+    
+    """Compute and plot SHAP waterfall explanations for external dataset."""
     print("\n=== INFERENCE SHAP ===")
-
-    best_models = {
-        TARGET_FOS: "GradientBoostingRegressor",
-        TARGET_SLIP_DEPTH: "GradientBoostingRegressor",
-        TARGET_ZWU_FINAL: "DecisionTreeRegressor",
-        TARGET_ZWD_FINAL: "DecisionTreeRegressor"
-    }
 
     input_csv = os.path.join(DATASET_DIR, "real_cases.csv")
     if not os.path.isfile(input_csv):
@@ -64,42 +50,13 @@ def run_real_cases_inference(slope="drained"):
 
         for reg_model in regressors:
             model_name = reg_model.__class__.__name__
-            # if best_models[target] != model_name:
-            #     continue
 
             inference_out_dir = os.path.join(FIGURES_DIR, "shap_inference", "drained", target, model_name)
             os.makedirs(inference_out_dir, exist_ok=True)
 
             # Load the inference model.
-            try:
-                with open(os.path.join(RESULTS_DIR, "drained", target, model_name, f"{model_name}_inference.pkl"), "rb") as f:
-                    bundle = pickle.load(f)
-            except ModuleNotFoundError as e:
-                if e.name == 'sklearn.ensemble._gb_losses':
-                    bundle = load_legacy_model(os.path.join(RESULTS_DIR, "drained", target, model_name, f"{model_name}_inference.pkl"))
-                else:
-                    raise
-    
-            # try:
-            #     with warnings.catch_warnings(record=True) as w:
-            #         warnings.simplefilter("always", InconsistentVersionWarning)
-            #         with open(os.path.join(RESULTS_DIR, "drained", target, model_name, f"{model_name}_inference.pkl"), "rb") as f:
-            #             bundle = pickle.load(f)
-
-            #         if any(issubclass(warn.category, InconsistentVersionWarning) for warn in w):
-            #             version_mismatch = True
-
-            # except ModuleNotFoundError as e:
-            #     if e.name == 'sklearn.ensemble._gb_losses':
-            #         bundle = load_legacy_model(os.path.join(RESULTS_DIR, "drained", target, model_name, f"{model_name}_inference.pkl"))
-            #         version_mismatch = True
-            #     else:
-            #         raise
-
-            # if version_mismatch:
-            #     regressor = patch_monotonic_cst(bundle["model"])
-            # else:
-            regressor = bundle["model"]
+            with open(os.path.join(RESULTS_DIR, "drained", target, model_name, f"{model_name}_inference.pkl"), "rb") as f:
+                bundle = pickle.load(f)
 
             features, scaler = bundle["features"], bundle.get("scaler")
             feature_names = [NAME_TO_SYMBOL.get(n, n) for n in features]

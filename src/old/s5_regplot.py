@@ -4,8 +4,7 @@
 import os
 import sys
 import pickle
-import matplotlib
-matplotlib.use("Agg")
+
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -213,13 +212,6 @@ def create_regression_plot(y_true, y_pred, r2, mae, target, model_name, output_p
 # =========================================================
 if __name__ == "__main__":
     
-    best_models = {
-        TARGET_FOS: "GradientBoostingRegressor",
-        TARGET_SLIP_DEPTH: "GradientBoostingRegressor",
-        TARGET_ZWU_FINAL: "DecisionTreeRegressor",
-        TARGET_ZWD_FINAL: "DecisionTreeRegressor"
-    }
-
     for slope in ALL_SLOPES:
         for target in ALL_TARGETS:
             stats_dir = os.path.join(RESULTS_DIR, slope, target)
@@ -235,8 +227,6 @@ if __name__ == "__main__":
 
             # Process the prediction data for each identified model.
             for model_name, model_directory, pkl_path in model_directories:
-                if best_models[target] != model_name:
-                    continue
                 try:
                     (y_true, y_pred, r2, mae) = load_saved_test_predictions(pkl_path)
                 except Exception as error:

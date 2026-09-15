@@ -5,6 +5,7 @@ import itertools
 import os
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,7 +13,6 @@ import pandas as pd
 import scipy.stats as stats
 from matplotlib.lines import Line2D
 from statsmodels.stats.multitest import multipletests
-from PIL import Image
 
 from config import (
     ALL_SLOPES,
@@ -270,15 +270,6 @@ def create_figure(slope, metric, distributions_by_target):
     output_path = os.path.join(output_directory, f"boxplot_wilcoxon_{metric}.png")
     figure.savefig(output_path)
     plt.close(figure)
-
-    with Image.open(output_path) as image:
-        left = 400
-        top = 250
-        right = max(left + 1, image.width - 500)
-        bottom = max(top + 1, image.height - 130)
-
-        image.crop((left, top, right, bottom)).save(output_path)
-
 
 
 if __name__ == "__main__":

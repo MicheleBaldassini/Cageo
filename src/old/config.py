@@ -136,11 +136,11 @@ SIGNIFICANCE_COLORS = ListedColormap([
 # The regression models.
 regressors = [
     tree.DecisionTreeRegressor(random_state=RANDOM_SEED),
-    KNeighborsRegressor(),
-    RandomForestRegressor(n_jobs=1, random_state=RANDOM_SEED),
-    GradientBoostingRegressor(random_state=RANDOM_SEED),
-    XGBRegressor(n_jobs=1, random_state=RANDOM_SEED),
-    LGBMRegressor(verbose=-1, n_jobs=1, random_state=RANDOM_SEED)
+    # KNeighborsRegressor(),
+    # RandomForestRegressor(n_jobs=1, random_state=RANDOM_SEED),
+    # GradientBoostingRegressor(random_state=RANDOM_SEED),
+    # XGBRegressor(n_jobs=1, random_state=RANDOM_SEED),
+    # LGBMRegressor(verbose=-1, n_jobs=1, random_state=RANDOM_SEED)
 ]
 
 

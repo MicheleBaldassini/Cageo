@@ -2,12 +2,10 @@
 """Evaluate fuzzy inference systems and generate ranking figures."""
 
 import os
-import sys
 import pickle
 import sys
 import types
-import matplotlib
-matplotlib.use("Agg")
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -27,12 +25,57 @@ from config import (
     TARGET_SLIP_DEPTH,
     TARGET_ZWD_FINAL,
     TARGET_ZWU_FINAL,
-    ACCUMULATED_RAIN_COLUMN
 )
 
-import warnings
-from sklearn.exceptions import InconsistentVersionWarning
-from assets import load_legacy_model, patch_monotonic_cst
+# Inject compatibility structures to allow the deserialization of legacy scikit-learn GradientBoosting models.
+gb_losses = types.ModuleType("sklearn.ensemble._gb_losses")
+
+
+class IdentityLink:
+    """Implement a dummy identity link class to satisfy legacy model dependencies."""
+    def link(self, x): return x
+    def inverse(self, x): return x
+
+
+class LeastSquaresError:
+    """Implement a compatibility stub for the legacy LeastSquaresError class."""
+    K = 1
+    link = IdentityLink()
+
+    def __init__(self, *args, **kwargs): pass
+    
+    def __call__(self, y, pred, sample_weight=None): 
+        # Compute the mean squared error between true and predicted values.
+        return np.mean((y - pred) ** 2)
+        
+    def negative_gradient(self, y, pred, **k): 
+        # Calculate the residual errors.
+        return y - pred
+        
+    def update_terminal_regions(self, *args, **kwargs): pass
+    
+    def get_init_raw_predictions(self, X, estimator): 
+        # Extract initial raw predictions and reshape the output array.
+        return estimator.predict(X).reshape(-1, 1)
+
+
+# Register the compatibility classes within the system modules.
+gb_losses.LeastSquaresError = LeastSquaresError
+sys.modules["sklearn.ensemble._gb_losses"] = gb_losses
+
+
+def patch_monotonic_cst(model):
+    """Traverse the model estimators and append missing monotonic-constraint attributes."""
+    if hasattr(model, "estimators_"):
+        # Flatten the estimator array and update each individual tree.
+        for est in np.ravel(model.estimators_):
+            if not hasattr(est, "monotonic_cst"):
+                est.monotonic_cst = None
+    else:
+        # Update the base model directly if it lacks the attribute.
+        if not hasattr(model, "monotonic_cst"):
+            model.monotonic_cst = None
+    return model
 
 
 # Define global parameters for the fuzzy inference system.
@@ -180,7 +223,7 @@ def create_system(matrix):
 
 
 def normalize_dict(d):
-    """Scale dictionary values to a normalized maximum."""
+    """Scale dictionary values."""
     vals = np.array(list(d.values()))
     return {k: v / vals.max() for k, v in d.items()}
 
@@ -263,14 +306,13 @@ def plot_surfaces(name, system, out_dir_f, out_dir_c, point=None):
     custom_cmap = LinearSegmentedColormap.from_list("crispy_fuzzy_cmap", [(0.0, "red"), (0.25, "orange"), (0.5, "yellow"), (1.0, "green")])
 
     def crop_manual(img_path):
-        """Remove excess transparent borders from the generated image."""
         img = Image.open(img_path).convert("RGB")
         bbox = (60, 60, img.width - 10, img.height - 50)
         if bbox[0] < bbox[2] and bbox[1] < bbox[3]:
             img.crop(bbox).save(img_path)
 
     def draw_single_surface(Dg, Pg, Z, pt_z, filepath):
-        """Build the 3D axis object and save the figure."""
+        """Build the 3D axis object."""
         fig, ax = plt.subplots(figsize=(7, 7), subplot_kw={"projection": "3d"})
         
         ax.plot_surface(Dg, Pg, Z, cmap=custom_cmap, vmin=0, vmax=1, edgecolor="none", alpha=0.65, zorder=0)
@@ -363,42 +405,19 @@ def plot_ranking_bars(results, path):
     plt.savefig(path, dpi=300, bbox_inches="tight", facecolor=fig.get_facecolor())
     plt.close(fig)
 
-    with Image.open(path) as image:
-        left = 30
-        top = 50
-        right = max(left + 1, image.width - 10)
-        bottom = max(top + 1, image.height - 30)
-
-        image.crop((left, top, right, bottom)).save(path)
-
 
 def _predict_target_for_row(row: pd.Series, base_dir: str, slope: str, model_name: str, target_name: str):
     """Load a target model, extract required features, and compute the prediction for a single row."""
     pkl_path = os.path.join(base_dir, "results", slope, target_name, model_name, f"{model_name}_inference.pkl")
     
-    version_mismatch = False
-    
-    try:
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always", InconsistentVersionWarning)
-            with open(pkl_path, "rb") as f:
-                d = pickle.load(f)
+    with open(pkl_path, "rb") as f:
+        d = pickle.load(f)
 
-            if any(issubclass(warn.category, InconsistentVersionWarning) for warn in w):
-                version_mismatch = True
-
-    except ModuleNotFoundError as e:
-        if e.name == 'sklearn.ensemble._gb_losses':
-            d = load_legacy_model(pkl_path)
-            version_mismatch = True
-        else:
-            raise
-
-    if version_mismatch:
-        regressor = patch_monotonic_cst(d["model"])
+    if model_name == 'GradientBoostingRegressor':
+        regressor = patch_monotonic_cst(d.get("model"))
     else:
-        regressor = d["model"]
-
+        regressor = d.get("model")
+        
     features, scaler = d["features"], d.get("scaler")
 
     # Extract the input features required by the target model and scale them.
@@ -409,16 +428,16 @@ def _predict_target_for_row(row: pd.Series, base_dir: str, slope: str, model_nam
     return float(np.squeeze(regressor.predict(X_scaled))), features
 
 
-def infer_one_sample(row: pd.Series, slope:str, best_models: dict, base_dir: str):
-    """Compute the predictions for all four targets for a given input row using the best models."""    
-    fos_pred, feats_fos = _predict_target_for_row(row, base_dir, slope, best_models[TARGET_FOS], TARGET_FOS)
-    zs_pred, feats_zs = _predict_target_for_row(row, base_dir, slope, best_models[TARGET_SLIP_DEPTH], TARGET_SLIP_DEPTH)
-    zwuf_pred, feats_zwuf = _predict_target_for_row(row, base_dir, slope, best_models[TARGET_ZWU_FINAL], TARGET_ZWU_FINAL)
-    zwdf_pred, feats_zwdf = _predict_target_for_row(row, base_dir, slope, best_models[TARGET_ZWD_FINAL], TARGET_ZWD_FINAL)
+def infer_one_sample(row: pd.Series, slope:str, model: str, base_dir: str):
+    """Compute the predictions for all four target for a given input row."""    
+    fos_pred, feats_fos = _predict_target_for_row(row, base_dir, slope, model, TARGET_FOS)
+    zs_pred, feats_zs = _predict_target_for_row(row, base_dir, slope, model, TARGET_SLIP_DEPTH)
+    zwuf_pred, feats_zwuf = _predict_target_for_row(row, base_dir, slope, model, TARGET_ZWU_FINAL)
+    zwdf_pred, feats_zwdf = _predict_target_for_row(row, base_dir, slope, model, TARGET_ZWD_FINAL)
 
     # Output predictions, feature sets, and true values.
     return fos_pred, zs_pred, zwuf_pred, zwdf_pred, feats_fos, feats_zs, feats_zwuf, feats_zwdf, {
-        "fos": row.get(TARGET_FOS), "zs": row.get(TARGET_SLIP_DEPTH), "zwufinal": row.get(TARGET_ZWU_FINAL), "zwdfinal": row.get(TARGET_ZWD_FINAL)
+        "fos": row.get(TARGET_FOS), "zs": row.get(TARGET_SLIP_DEPTH), "zwufinal": row.get("zwufinal"), "zwdfinal": row.get("zwdfinal")
     }
 
 
@@ -445,93 +464,71 @@ if __name__ == "__main__":
 
     df = pd.read_csv(in_csv)
 
-    # Define the dictionary specifying the exact optimal model name for each target variable.
-    best_models = {
-        TARGET_FOS: "GradientBoostingRegressor",
-        TARGET_SLIP_DEPTH: "GradientBoostingRegressor",
-        TARGET_ZWU_FINAL: "GradientBoostingRegressor",
-        TARGET_ZWD_FINAL: "GradientBoostingRegressor"
-    }
+    for reg_model in regressors:
+        model_name = reg_model.__class__.__name__
+        out_csv = os.path.join(RESULTS_DIR, f"predictions_{model_name}.csv")
+        out_txt = os.path.join(RESULTS_DIR, f"features_{model_name}.txt")
 
-    out_csv = os.path.join(RESULTS_DIR, "predictions_best_models.csv")
-    out_txt = os.path.join(RESULTS_DIR, "features_best_models.txt")
+        # Track the sets of input features used by each model for each target.
+        used_feats = {"drained": {"fos": set(), "zs": set(), "zwufinal": set(), "zwdfinal": set()}}
+                      # "undrained": {"fos": set(), "zs": set(), "zwufinal": set(), "zwdfinal": set()}}
 
-    # Track the sets of input features used by each model for each target.
-    used_feats = {"drained": {"fos": set(), "zs": set(), "zwufinal": set(), "zwdfinal": set()}}
-                  # "undrained": {"fos": set(), "zs": set(), "zwufinal": set(), "zwdfinal": set()}}
+        df_out = pd.DataFrame({
+            "Tr": df["Return period of precipitation [years]"],
+            "fos_true": np.nan, "zs_true": np.nan, "zwuf_true": np.nan, "zwdf_true": np.nan,
+            "fos_pred": np.nan, "zs_pred": np.nan, "zwuf_pred": np.nan, "zwdf_pred": np.nan,
+        })
 
-    df_out = pd.DataFrame({
-        "Tr": df["Return period of precipitation [years]"],
-        "fos_true": np.nan, "zs_true": np.nan, "zwuf_true": np.nan, "zwdf_true": np.nan,
-        "fos_pred": np.nan, "zs_pred": np.nan, "zwuf_pred": np.nan, "zwdf_pred": np.nan,
-    })
+        for idx, row in df.iterrows():
+            f_p, z_p, u_p, d_p, f_f, z_f, u_f, d_f, true = infer_one_sample(row, slope, model_name, BASE_DIR)
 
-    # Iterate through the dataset rows to calculate predictions for all variables.
-    for idx, row in df.iterrows():
-        # Handle empty return periods appropriately.
-        if row["Return period of precipitation [years]"] != row["Return period of precipitation [years]"]:
-            row["Return period of precipitation [years]"] = -1
-        
-        # Pass the query to the inference function utilizing the specified best models.
-        f_p, z_p, u_p, d_p, f_f, z_f, u_f, d_f, true = infer_one_sample(row, slope, best_models, BASE_DIR)
+            # Record predictions and corresponding true values.
+            df_out.loc[idx, ["fos_pred", "zs_pred", "zwuf_pred", "zwdf_pred"]] = [float(f_p), z_p, u_p, d_p]
+            df_out.loc[idx, ["fos_true", "zs_true", "zwuf_true", "zwdf_true"]] = [true.get("fos"), true.get("zs"), true.get("zwufinal"), true.get("zwdfinal")]
 
-        # Apply specific fallback values based on the initial piezometric conditions.
-        if row[ACCUMULATED_RAIN_COLUMN] == 0:
-            u_p = row['Initial piezometric surface depth - upstream [m]']
-            d_p = row['Initial piezometric surface depth - downstream [m]']
-        if row['Initial piezometric surface depth - upstream [m]'] == 0:
-            u_p = 0
-        if row['Initial piezometric surface depth - downstream [m]'] == 0:
-            d_p = 0
+            used_feats['drained']["fos"].update(f_f)
+            used_feats['drained']["zs"].update(z_f)
+            used_feats['drained']["zwufinal"].update(u_f)
+            used_feats['drained']["zwdfinal"].update(d_f)
 
-        # Record predictions and corresponding true values in the output dataframe.
-        df_out.loc[idx, ["fos_pred", "zs_pred", "zwuf_pred", "zwdf_pred"]] = [float(f_p), z_p, u_p, d_p]
-        df_out.loc[idx, ["fos_true", "zs_true", "zwuf_true", "zwdf_true"]] = [true.get("fos"), true.get("zs"), true.get("zwufinal"), true.get("zwdfinal")]
+            # Average the piezometric heads to calculate the aggregate input coordinate for the fuzzy system.
+            zwf_pred = (u_p + d_p) / 2
+            sample_base_prefix = f"{row['Return period of precipitation [years]']}"
 
-        used_feats['drained']["fos"].update(f_f)
-        used_feats['drained']["zs"].update(z_f)
-        used_feats['drained']["zwufinal"].update(u_f)
-        used_feats['drained']["zwdfinal"].update(d_f)
+            if sample_base_prefix == 'nan':
+                sample_base_prefix = 'TR -'
+            else:
+                sample_base_prefix = 'TR ' + sample_base_prefix.split('.')[0]
 
-        # Average the piezometric heads to calculate the aggregate input coordinate for the fuzzy system.
-        zwf_pred = (u_p + d_p) / 2
-        sample_base_prefix = f"{row['Return period of precipitation [years]']}"
 
-        # Format the return period identifier string.
-        if sample_base_prefix == -1:
-            sample_base_prefix = 'TR -'
-        else:
-            sample_base_prefix = 'TR ' + sample_base_prefix.split('.')[0]
+            for alpha in ALPHAS:
+                alpha_str = f"alpha_{str(alpha).replace('.', '')}"
+                top = final_ranking(z_p, zwf_pred, alpha=alpha)[:TOPK]
 
-        # Generate and save evaluations and surface mappings over multiple alpha weights.
-        for alpha in ALPHAS:
-            alpha_str = f"alpha_{str(alpha).replace('.', '')}"
-            top = final_ranking(z_p, zwf_pred, alpha=alpha)[:TOPK]
+                alpha_base_dir = os.path.join(FIGURES_DIR, "fis", sample_base_prefix, alpha_str)
+                ranking_dir = os.path.join(alpha_base_dir, "ranking")
+                fuzzy_dir = os.path.join(alpha_base_dir, "fuzzy_surface")
+                crispy_dir = os.path.join(alpha_base_dir, "crispy_surface")
 
-            alpha_base_dir = os.path.join(FIGURES_DIR, "fis", sample_base_prefix, alpha_str)
-            ranking_dir = os.path.join(alpha_base_dir, "ranking")
-            fuzzy_dir = os.path.join(alpha_base_dir, "fuzzy_surface")
-            crispy_dir = os.path.join(alpha_base_dir, "crispy_surface")
+                os.makedirs(ranking_dir, exist_ok=True)
+                os.makedirs(fuzzy_dir, exist_ok=True)
+                os.makedirs(crispy_dir, exist_ok=True)
 
-            os.makedirs(ranking_dir, exist_ok=True)
-            os.makedirs(fuzzy_dir, exist_ok=True)
-            os.makedirs(crispy_dir, exist_ok=True)
+                plot_ranking_bars(top, os.path.join(ranking_dir, f"{sample_base_prefix}.png"))
 
-            plot_ranking_bars(top, os.path.join(ranking_dir, f"{sample_base_prefix}.png"))
+                for gname, e, a_raw, score in top:
+                    plot_surfaces(gname, ALL_SYSTEMS[gname], fuzzy_dir, crispy_dir, point=(z_p, zwf_pred))
 
-            # for gname, e, a_raw, score in top:
-            #     plot_surfaces(gname, ALL_SYSTEMS[gname], fuzzy_dir, crispy_dir, point=(z_p, zwf_pred))
+        df_out.to_csv(out_csv, index=False)
 
-    df_out.to_csv(out_csv, index=False)
-
-    with open(out_txt, "w", encoding="utf-8") as f:
-        f.write("Drained\n")
-        f.write("FoS: " + ", ".join(sorted(used_feats["drained"]["fos"])) + "\n")
-        f.write("zs: "  + ", ".join(sorted(used_feats["drained"]["zs"]))  + "\n")
-        f.write("zwf upstream: " + ", ".join(sorted(used_feats["drained"]["zwufinal"])) + "\n")
-        f.write("zwf downstream: " + ", ".join(sorted(used_feats["drained"]["zwdfinal"])) + "\n")
-        # f.write("Undrained\n")
-        # f.write("FoS: " + ", ".join(sorted(used_feats["undrained"]["fos"])) + "\n")
-        # f.write("zs: "  + ", ".join(sorted(used_feats["undrained"]["zs"]))  + "\n")
-        # f.write("zwf upstream: " + ", ".join(sorted(used_feats["undrained"]["zwufinal"])) + "\n")
-        # f.write("zwf downstream: " + ", ".join(sorted(used_feats["undrained"]["zwdfinal"])) + "\n")
+        with open(out_txt, "w", encoding="utf-8") as f:
+            f.write("Drained\n")
+            f.write("FoS: " + ", ".join(sorted(used_feats["drained"]["fos"])) + "\n")
+            f.write("zs: "  + ", ".join(sorted(used_feats["drained"]["zs"]))  + "\n")
+            f.write("zwf upstream: " + ", ".join(sorted(used_feats["drained"]["zwufinal"])) + "\n")
+            f.write("zwf downstream: " + ", ".join(sorted(used_feats["drained"]["zwdfinal"])) + "\n")
+            # f.write("Undrained\n")
+            # f.write("FoS: " + ", ".join(sorted(used_feats["undrained"]["fos"])) + "\n")
+            # f.write("zs: "  + ", ".join(sorted(used_feats["undrained"]["zs"]))  + "\n")
+            # f.write("zwf upstream: " + ", ".join(sorted(used_feats["undrained"]["zwufinal"])) + "\n")
+            # f.write("zwf downstream: " + ", ".join(sorted(used_feats["undrained"]["zwdfinal"])) + "\n")

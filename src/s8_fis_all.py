@@ -398,7 +398,7 @@ def _predict_target_for_row(row: pd.Series, base_dir: str, slope: str, model_nam
         regressor = patch_monotonic_cst(d["model"])
     else:
         regressor = d["model"]
-
+    
     features, scaler = d["features"], d.get("scaler")
 
     # Extract the input features required by the target model and scale them.
@@ -409,12 +409,13 @@ def _predict_target_for_row(row: pd.Series, base_dir: str, slope: str, model_nam
     return float(np.squeeze(regressor.predict(X_scaled))), features
 
 
-def infer_one_sample(row: pd.Series, slope:str, best_models: dict, base_dir: str):
-    """Compute the predictions for all four targets for a given input row using the best models."""    
-    fos_pred, feats_fos = _predict_target_for_row(row, base_dir, slope, best_models[TARGET_FOS], TARGET_FOS)
-    zs_pred, feats_zs = _predict_target_for_row(row, base_dir, slope, best_models[TARGET_SLIP_DEPTH], TARGET_SLIP_DEPTH)
-    zwuf_pred, feats_zwuf = _predict_target_for_row(row, base_dir, slope, best_models[TARGET_ZWU_FINAL], TARGET_ZWU_FINAL)
-    zwdf_pred, feats_zwdf = _predict_target_for_row(row, base_dir, slope, best_models[TARGET_ZWD_FINAL], TARGET_ZWD_FINAL)
+
+def infer_one_sample(row: pd.Series, slope:str, model: str, base_dir: str):
+    """Compute the predictions for all four target for a given input row."""    
+    fos_pred, feats_fos = _predict_target_for_row(row, base_dir, slope, model, TARGET_FOS)
+    zs_pred, feats_zs = _predict_target_for_row(row, base_dir, slope, model, TARGET_SLIP_DEPTH)
+    zwuf_pred, feats_zwuf = _predict_target_for_row(row, base_dir, slope, model, TARGET_ZWU_FINAL)
+    zwdf_pred, feats_zwdf = _predict_target_for_row(row, base_dir, slope, model, TARGET_ZWD_FINAL)
 
     # Output predictions, feature sets, and true values.
     return fos_pred, zs_pred, zwuf_pred, zwdf_pred, feats_fos, feats_zs, feats_zwuf, feats_zwdf, {
@@ -445,93 +446,83 @@ if __name__ == "__main__":
 
     df = pd.read_csv(in_csv)
 
-    # Define the dictionary specifying the exact optimal model name for each target variable.
-    best_models = {
-        TARGET_FOS: "GradientBoostingRegressor",
-        TARGET_SLIP_DEPTH: "GradientBoostingRegressor",
-        TARGET_ZWU_FINAL: "GradientBoostingRegressor",
-        TARGET_ZWD_FINAL: "GradientBoostingRegressor"
-    }
 
-    out_csv = os.path.join(RESULTS_DIR, "predictions_best_models.csv")
-    out_txt = os.path.join(RESULTS_DIR, "features_best_models.txt")
+    for reg_model in regressors:
+        model_name = reg_model.__class__.__name__
+        out_csv = os.path.join(RESULTS_DIR, f"predictions_{model_name}.csv")
+        out_txt = os.path.join(RESULTS_DIR, f"features_{model_name}.txt")
 
-    # Track the sets of input features used by each model for each target.
-    used_feats = {"drained": {"fos": set(), "zs": set(), "zwufinal": set(), "zwdfinal": set()}}
-                  # "undrained": {"fos": set(), "zs": set(), "zwufinal": set(), "zwdfinal": set()}}
+        # Track the sets of input features used by each model for each target.
+        used_feats = {"drained": {"fos": set(), "zs": set(), "zwufinal": set(), "zwdfinal": set()}}
+                      # "undrained": {"fos": set(), "zs": set(), "zwufinal": set(), "zwdfinal": set()}}
 
-    df_out = pd.DataFrame({
-        "Tr": df["Return period of precipitation [years]"],
-        "fos_true": np.nan, "zs_true": np.nan, "zwuf_true": np.nan, "zwdf_true": np.nan,
-        "fos_pred": np.nan, "zs_pred": np.nan, "zwuf_pred": np.nan, "zwdf_pred": np.nan,
-    })
+        df_out = pd.DataFrame({
+            "Tr": df["Return period of precipitation [years]"],
+            "fos_true": np.nan, "zs_true": np.nan, "zwuf_true": np.nan, "zwdf_true": np.nan,
+            "fos_pred": np.nan, "zs_pred": np.nan, "zwuf_pred": np.nan, "zwdf_pred": np.nan,
+        })
 
-    # Iterate through the dataset rows to calculate predictions for all variables.
-    for idx, row in df.iterrows():
-        # Handle empty return periods appropriately.
-        if row["Return period of precipitation [years]"] != row["Return period of precipitation [years]"]:
-            row["Return period of precipitation [years]"] = -1
-        
-        # Pass the query to the inference function utilizing the specified best models.
-        f_p, z_p, u_p, d_p, f_f, z_f, u_f, d_f, true = infer_one_sample(row, slope, best_models, BASE_DIR)
+        for idx, row in df.iterrows():
+            if row["Return period of precipitation [years]"] != row["Return period of precipitation [years]"]:
+                row["Return period of precipitation [years]"] = 0
+            # if row["Return period of precipitation [years]"] == np.nan:
+            #     row["Return period of precipitation [years]"] = 0
+            f_p, z_p, u_p, d_p, f_f, z_f, u_f, d_f, true = infer_one_sample(row, slope, model_name, BASE_DIR)
 
-        # Apply specific fallback values based on the initial piezometric conditions.
-        if row[ACCUMULATED_RAIN_COLUMN] == 0:
-            u_p = row['Initial piezometric surface depth - upstream [m]']
-            d_p = row['Initial piezometric surface depth - downstream [m]']
-        if row['Initial piezometric surface depth - upstream [m]'] == 0:
-            u_p = 0
-        if row['Initial piezometric surface depth - downstream [m]'] == 0:
-            d_p = 0
+            if row[ACCUMULATED_RAIN_COLUMN] == 0:
+                u_p = row['Initial piezometric surface depth - upstream [m]']
+                d_p = row['Initial piezometric surface depth - downstream [m]']
+            if row['Initial piezometric surface depth - upstream [m]'] == 0:
+                u_p = 0
+            if row['Initial piezometric surface depth - downstream [m]'] == 0:
+                d_p = 0
 
-        # Record predictions and corresponding true values in the output dataframe.
-        df_out.loc[idx, ["fos_pred", "zs_pred", "zwuf_pred", "zwdf_pred"]] = [float(f_p), z_p, u_p, d_p]
-        df_out.loc[idx, ["fos_true", "zs_true", "zwuf_true", "zwdf_true"]] = [true.get("fos"), true.get("zs"), true.get("zwufinal"), true.get("zwdfinal")]
+            # Record predictions and corresponding true values.
+            df_out.loc[idx, ["fos_pred", "zs_pred", "zwuf_pred", "zwdf_pred"]] = [float(f_p), z_p, u_p, d_p]
+            df_out.loc[idx, ["fos_true", "zs_true", "zwuf_true", "zwdf_true"]] = [true.get("fos"), true.get("zs"), true.get("zwufinal"), true.get("zwdfinal")]
 
-        used_feats['drained']["fos"].update(f_f)
-        used_feats['drained']["zs"].update(z_f)
-        used_feats['drained']["zwufinal"].update(u_f)
-        used_feats['drained']["zwdfinal"].update(d_f)
+            used_feats['drained']["fos"].update(f_f)
+            used_feats['drained']["zs"].update(z_f)
+            used_feats['drained']["zwufinal"].update(u_f)
+            used_feats['drained']["zwdfinal"].update(d_f)
 
-        # Average the piezometric heads to calculate the aggregate input coordinate for the fuzzy system.
-        zwf_pred = (u_p + d_p) / 2
-        sample_base_prefix = f"{row['Return period of precipitation [years]']}"
+            # Average the piezometric heads to calculate the aggregate input coordinate for the fuzzy system.
+            zwf_pred = (u_p + d_p) / 2
+            sample_base_prefix = f"{row['Return period of precipitation [years]']}"
 
-        # Format the return period identifier string.
-        if sample_base_prefix == -1:
-            sample_base_prefix = 'TR -'
-        else:
-            sample_base_prefix = 'TR ' + sample_base_prefix.split('.')[0]
+            if sample_base_prefix == 'nan':
+                sample_base_prefix = 'TR -'
+            else:
+                sample_base_prefix = 'TR ' + sample_base_prefix.split('.')[0]
 
-        # Generate and save evaluations and surface mappings over multiple alpha weights.
-        for alpha in ALPHAS:
-            alpha_str = f"alpha_{str(alpha).replace('.', '')}"
-            top = final_ranking(z_p, zwf_pred, alpha=alpha)[:TOPK]
+            # for alpha in ALPHAS:
+            #     alpha_str = f"alpha_{str(alpha).replace('.', '')}"
+            #     top = final_ranking(z_p, zwf_pred, alpha=alpha)[:TOPK]
 
-            alpha_base_dir = os.path.join(FIGURES_DIR, "fis", sample_base_prefix, alpha_str)
-            ranking_dir = os.path.join(alpha_base_dir, "ranking")
-            fuzzy_dir = os.path.join(alpha_base_dir, "fuzzy_surface")
-            crispy_dir = os.path.join(alpha_base_dir, "crispy_surface")
+            #     alpha_base_dir = os.path.join(FIGURES_DIR, "fis", sample_base_prefix, alpha_str)
+            #     ranking_dir = os.path.join(alpha_base_dir, "ranking")
+            #     fuzzy_dir = os.path.join(alpha_base_dir, "fuzzy_surface")
+            #     crispy_dir = os.path.join(alpha_base_dir, "crispy_surface")
 
-            os.makedirs(ranking_dir, exist_ok=True)
-            os.makedirs(fuzzy_dir, exist_ok=True)
-            os.makedirs(crispy_dir, exist_ok=True)
+            #     os.makedirs(ranking_dir, exist_ok=True)
+            #     os.makedirs(fuzzy_dir, exist_ok=True)
+            #     os.makedirs(crispy_dir, exist_ok=True)
 
-            plot_ranking_bars(top, os.path.join(ranking_dir, f"{sample_base_prefix}.png"))
+            #     plot_ranking_bars(top, os.path.join(ranking_dir, f"{sample_base_prefix}.png"))
 
-            # for gname, e, a_raw, score in top:
-            #     plot_surfaces(gname, ALL_SYSTEMS[gname], fuzzy_dir, crispy_dir, point=(z_p, zwf_pred))
+            #     for gname, e, a_raw, score in top:
+            #         plot_surfaces(gname, ALL_SYSTEMS[gname], fuzzy_dir, crispy_dir, point=(z_p, zwf_pred))
 
-    df_out.to_csv(out_csv, index=False)
+        df_out.to_csv(out_csv, index=False)
 
-    with open(out_txt, "w", encoding="utf-8") as f:
-        f.write("Drained\n")
-        f.write("FoS: " + ", ".join(sorted(used_feats["drained"]["fos"])) + "\n")
-        f.write("zs: "  + ", ".join(sorted(used_feats["drained"]["zs"]))  + "\n")
-        f.write("zwf upstream: " + ", ".join(sorted(used_feats["drained"]["zwufinal"])) + "\n")
-        f.write("zwf downstream: " + ", ".join(sorted(used_feats["drained"]["zwdfinal"])) + "\n")
-        # f.write("Undrained\n")
-        # f.write("FoS: " + ", ".join(sorted(used_feats["undrained"]["fos"])) + "\n")
-        # f.write("zs: "  + ", ".join(sorted(used_feats["undrained"]["zs"]))  + "\n")
-        # f.write("zwf upstream: " + ", ".join(sorted(used_feats["undrained"]["zwufinal"])) + "\n")
-        # f.write("zwf downstream: " + ", ".join(sorted(used_feats["undrained"]["zwdfinal"])) + "\n")
+        with open(out_txt, "w", encoding="utf-8") as f:
+            f.write("Drained\n")
+            f.write("FoS: " + ", ".join(sorted(used_feats["drained"]["fos"])) + "\n")
+            f.write("zs: "  + ", ".join(sorted(used_feats["drained"]["zs"]))  + "\n")
+            f.write("zwf upstream: " + ", ".join(sorted(used_feats["drained"]["zwufinal"])) + "\n")
+            f.write("zwf downstream: " + ", ".join(sorted(used_feats["drained"]["zwdfinal"])) + "\n")
+            # f.write("Undrained\n")
+            # f.write("FoS: " + ", ".join(sorted(used_feats["undrained"]["fos"])) + "\n")
+            # f.write("zs: "  + ", ".join(sorted(used_feats["undrained"]["zs"]))  + "\n")
+            # f.write("zwf upstream: " + ", ".join(sorted(used_feats["undrained"]["zwufinal"])) + "\n")
+            # f.write("zwf downstream: " + ", ".join(sorted(used_feats["undrained"]["zwdfinal"])) + "\n")
