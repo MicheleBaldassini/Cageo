@@ -6,7 +6,8 @@ import sys
 import pickle
 import numpy as np
 import pandas as pd
-import types
+import matplotlib
+matplotlib.use("Agg")
 
 from config import (
     regressors,

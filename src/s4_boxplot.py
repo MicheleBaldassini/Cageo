@@ -3,14 +3,13 @@
 
 import itertools
 import os
-
+import numpy as np
+import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import scipy.stats as stats
 from matplotlib.lines import Line2D
+import scipy.stats as stats
 from statsmodels.stats.multitest import multipletests
 from PIL import Image
 

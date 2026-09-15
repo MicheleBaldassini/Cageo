@@ -4,11 +4,10 @@
 import json
 import os
 import pickle
-
-import matplotlib.pyplot as plt
-matplotlib.use("Agg")
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+matplotlib.use("Agg")
 import seaborn as sns
 from joblib import Parallel, delayed
 from sklearn.base import clone

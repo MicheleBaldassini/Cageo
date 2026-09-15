@@ -4,14 +4,14 @@
 import os
 import sys
 import pickle
-import matplotlib
-matplotlib.use("Agg")
 import numpy as np
 import pandas as pd
-import seaborn as sns
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import matplotlib.transforms as transforms
+import seaborn as sns
 from PIL import Image
 from sklearn.metrics import r2_score, mean_absolute_error
 
@@ -25,6 +25,10 @@ from config import (
     TARGET_TO_DATASET,
     TARGET_LABELS,
     TARGET_UNITS,
+    TARGET_FOS,
+    TARGET_SLIP_DEPTH,
+    TARGET_ZWU_FINAL,
+    TARGET_ZWD_FINAL
 )
 
 

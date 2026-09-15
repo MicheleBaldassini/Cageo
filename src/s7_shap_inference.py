@@ -6,8 +6,8 @@ import sys
 import pickle
 import numpy as np
 import pandas as pd
-import shap
-import types
+import matplotlib
+matplotlib.use("Agg")
 
 from config import (
     regressors,
@@ -64,8 +64,8 @@ def run_real_cases_inference(slope="drained"):
 
         for reg_model in regressors:
             model_name = reg_model.__class__.__name__
-            # if best_models[target] != model_name:
-            #     continue
+            if best_models[target] != model_name:
+                continue
 
             inference_out_dir = os.path.join(FIGURES_DIR, "shap_inference", "drained", target, model_name)
             os.makedirs(inference_out_dir, exist_ok=True)
@@ -80,25 +80,6 @@ def run_real_cases_inference(slope="drained"):
                 else:
                     raise
     
-            # try:
-            #     with warnings.catch_warnings(record=True) as w:
-            #         warnings.simplefilter("always", InconsistentVersionWarning)
-            #         with open(os.path.join(RESULTS_DIR, "drained", target, model_name, f"{model_name}_inference.pkl"), "rb") as f:
-            #             bundle = pickle.load(f)
-
-            #         if any(issubclass(warn.category, InconsistentVersionWarning) for warn in w):
-            #             version_mismatch = True
-
-            # except ModuleNotFoundError as e:
-            #     if e.name == 'sklearn.ensemble._gb_losses':
-            #         bundle = load_legacy_model(os.path.join(RESULTS_DIR, "drained", target, model_name, f"{model_name}_inference.pkl"))
-            #         version_mismatch = True
-            #     else:
-            #         raise
-
-            # if version_mismatch:
-            #     regressor = patch_monotonic_cst(bundle["model"])
-            # else:
             regressor = bundle["model"]
 
             features, scaler = bundle["features"], bundle.get("scaler")

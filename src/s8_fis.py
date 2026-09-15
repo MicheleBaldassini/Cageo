@@ -4,18 +4,20 @@
 import os
 import sys
 import pickle
-import sys
-import types
+import numpy as np
+import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import skfuzzy as fuzz
 from matplotlib.colors import LinearSegmentedColormap
 from mpl_toolkits.mplot3d import Axes3D
 from PIL import Image
+import skfuzzy as fuzz
 from skfuzzy import control as ctrl
+
+import warnings
+from sklearn.exceptions import InconsistentVersionWarning
+from assets import load_legacy_model, patch_monotonic_cst
 
 from config import (
     regressors,
@@ -29,10 +31,6 @@ from config import (
     TARGET_ZWU_FINAL,
     ACCUMULATED_RAIN_COLUMN
 )
-
-import warnings
-from sklearn.exceptions import InconsistentVersionWarning
-from assets import load_legacy_model, patch_monotonic_cst
 
 
 # Define global parameters for the fuzzy inference system.
