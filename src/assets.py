@@ -4,16 +4,11 @@
 import os
 import sys
 import warnings
-# import matplotlib
-# matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import shap
 import logging
 from PIL import Image
-import types
-
-# import io
 import pickle
 
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
