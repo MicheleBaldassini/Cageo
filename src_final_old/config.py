@@ -29,7 +29,7 @@ RANDOM_SEED = 32651
 SAMPLE_WEIGHTS = False
 
 # Soil conditions and the prediction targets.
-ALL_SLOPES = ["drained"]
+ALL_SLOPES = ["undrained", "drained"]
 ALL_TARGETS = [
     "Factor of safety [-]",
     "Depth of slip surface [m]",
@@ -136,11 +136,11 @@ SIGNIFICANCE_COLORS = ListedColormap([
 # The regression models.
 regressors = [
     tree.DecisionTreeRegressor(random_state=RANDOM_SEED),
-    # KNeighborsRegressor(),
-    # RandomForestRegressor(n_jobs=1, random_state=RANDOM_SEED),
-    # GradientBoostingRegressor(random_state=RANDOM_SEED),
-    # XGBRegressor(n_jobs=1, random_state=RANDOM_SEED),
-    # LGBMRegressor(verbose=-1, n_jobs=1, random_state=RANDOM_SEED)
+    KNeighborsRegressor(),
+    RandomForestRegressor(n_jobs=1, random_state=RANDOM_SEED),
+    GradientBoostingRegressor(random_state=RANDOM_SEED),
+    XGBRegressor(n_jobs=1, random_state=RANDOM_SEED),
+    LGBMRegressor(verbose=-1, n_jobs=1, random_state=RANDOM_SEED)
 ]
 
 

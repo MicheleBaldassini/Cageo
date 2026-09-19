@@ -35,7 +35,7 @@ from config import BASE_DIR, DATASET_DIR
 # ============================================================================
 # GLOBAL STRATEGY
 # ============================================================================
-MODE = "canonical_near"
+MODE = "real_near"
 VALID_MODES = {"canonical_freq", "canonical_near", "real_freq", "real_near"}
 
 if MODE not in VALID_MODES:

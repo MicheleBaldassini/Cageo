@@ -1,14 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Match and preprocess D.1, D.2 and UN using one selectable strategy.
-
-Set MODE to one of:
-- canonical_freq
-- canonical_near
-- real_freq
-- real_near
-
-Outputs are written to DATASET_DIR / MODE.
-"""
+"""Match and preprocess D.1, D.2 and UN in memory; save only final CSVs."""
 
 from __future__ import annotations
 
@@ -19,6 +10,7 @@ import math
 import numbers
 import os
 import re
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -32,47 +24,33 @@ from s0_build_combinations import (
 from config import BASE_DIR, DATASET_DIR
 
 
-# ============================================================================
-# GLOBAL STRATEGY
-# ============================================================================
-MODE = "canonical_near"
-VALID_MODES = {"canonical_freq", "canonical_near", "real_freq", "real_near"}
-
-if MODE not in VALID_MODES:
-    raise ValueError(f"Invalid MODE={MODE!r}. Expected one of {sorted(VALID_MODES)}")
-
-USE_CANONICAL_MATCHING = MODE.startswith("canonical_")
-VALUE_SELECTION = MODE.rsplit("_", 1)[1]  # "freq" or "near"
-OUTPUT_DIR = os.path.join(DATASET_DIR, MODE)
-
-# Only the source column names and their order are used; display aliases are not.
-COLUMNS = (
-    "Unit weight [kN/m3]",
-    "Effective cohesion [kPa]",
-    "Effective friction angle [°]",
-    "Undrained Shear Strength [kPa]",
-    "Saturated permeability [m/s]",
-    "Soil Type [-]",
-    "Slope angle [°]",
-    "Slope length [m]",
-    "Total length [m]",
-    "Slope height [m]",
-    "Total height Upstream [m]",
-    "Total height Downstream [m]",
-    "Soil depth upstream [m]",
-    "Soil depth downstream [m]",
-    "Bedrock depth upstream [m]",
-    "Bedrock depth downstream [m]",
-    "Initial piezometric surface depth - upstream [m]",
-    "Initial piezometric surface depth - downstream [m]",
-    "Return period of precipitation [years]",
-    "Accumulated precipitation [mm]",
-    "Precipitation duration [hrs]",
-    "Factor of safety [-]",
-    "Depth of slip surface [m]",
-    "Final Piezometric surface depth - upstream [m]",
-    "Final Piezometric surface depth - downstream [m]",
-)
+COLUMNS = {
+    "Unit weight [kN/m3]": "γ",
+    "Effective cohesion [kPa]": "c'",
+    "Effective friction angle [°]": "φ'",
+    "Undrained Shear Strength [kPa]": "Cu",
+    "Saturated permeability [m/s]": "ksat",
+    "Soil Type [-]": "ST",
+    "Slope angle [°]": "α",
+    "Slope length [m]": "L",
+    "Total length [m]": "B",
+    "Slope height [m]": "H",
+    "Total height Upstream [m]": "hm",
+    "Total height Downstream [m]": "hd",
+    "Soil depth upstream [m]": "hSu",
+    "Soil depth downstream [m]": "hSd",
+    "Bedrock depth upstream [m]": "hBu",
+    "Bedrock depth downstream [m]": "hBd",
+    "Initial piezometric surface depth - upstream [m]": "zwuinit",
+    "Initial piezometric surface depth - downstream [m]": "zwdinit",
+    "Return period of precipitation [years]": "Tr",
+    "Accumulated precipitation [mm]": "hw",
+    "Precipitation duration [hrs]": "tw",
+    "Factor of safety [-]": "FoS",
+    "Depth of slip surface [m]": "zs",
+    "Final Piezometric surface depth - upstream [m]": "zwufinal",
+    "Final Piezometric surface depth - downstream [m]": "zwdfinal",
+}
 
 SOURCE_METADATA_COLUMNS = ["Source file", "Sheet", "Excel row"]
 
@@ -359,7 +337,7 @@ def load_source_and_matching_excel(excel_path):
                 f"{os.path.basename(excel_path)} - sheet '{sheet_name}': "
                 f"found {sheet_source.shape[1]} columns, expected {len(COLUMNS)}."
             )
-        sheet_source.columns = list(COLUMNS)
+        sheet_source.columns = list(COLUMNS.keys())
 
         # Keep untouched source targets and a normalized copy for matching and
         # feature-value candidates.
@@ -555,130 +533,6 @@ def closest_real_value(candidates, column, canonical_value):
     return values[best]
 
 
-def closest_real_value_in_same_slope(
-    source_df, real_match_df, sheet_indices, table_match_row,
-    real_idx, column, canonical_value, feature_columns,
-):
-    """Find a missing input only among simulations of the same sheet and slope."""
-    canonical_number = to_numeric_match_value(canonical_value)
-    if canonical_number is None or not math.isfinite(canonical_number):
-        return None
-
-    # Identify the slope from the generated combination. A wildcard must be
-    # resolved by the selected normalized simulation; otherwise the slope is
-    # ambiguous and borrowing a value from another row would be unsafe.
-    slope_values = {}
-    for feature in feature_columns:
-        if feature in (TR, RAIN, DURATION):
-            continue
-        expected = table_match_row[feature]
-        if pd.isna(expected) or str(expected).strip() == "*":
-            expected = real_match_df.at[real_idx, feature]
-        if pd.isna(expected) or str(expected).strip() == "*":
-            return None
-        slope_values[feature] = expected
-
-    best_score = None
-    best_value = None
-    for source_order, candidate_idx in enumerate(sheet_indices):
-        value = source_df.at[candidate_idx, column]
-        number = to_numeric_match_value(value)
-        if number is None or not math.isfinite(number):
-            continue
-        if not all(
-            values_match_with_tolerance(expected, real_match_df.at[candidate_idx, feature], feature)
-            if feature in GEOMETRY_MATCH_ATOL
-            else normalize_value_for_matching(expected)
-            == normalize_value_for_matching(real_match_df.at[candidate_idx, feature])
-            for feature, expected in slope_values.items()
-        ):
-            continue
-        score = (abs(number - canonical_number), source_order)
-        if best_score is None or score < best_score:
-            best_score = score
-            best_value = value
-    return best_value
-
-
-def map_simulations_to_canonical(table_match_df, real_match_df, feature_columns):
-    """Map each simulation input to the nearest combination value in its column.
-
-    This copy is used only for matching. Exported inputs are instead selected
-    independently from the observed real simulation values in each column.
-    """
-    canonicalized = real_match_df.copy()
-    for column in feature_columns:
-        canonical_numbers = sorted({
-            number
-            for value in table_match_df[column].unique()
-            if (number := to_numeric_match_value(value)) is not None
-            and math.isfinite(number)
-        })
-        if not canonical_numbers:
-            continue
-
-        mapped_values = {}
-        for value in real_match_df[column].unique():
-            number = to_numeric_match_value(value)
-            if number is None or not math.isfinite(number):
-                continue
-            position = bisect_left(canonical_numbers, number)
-            nearby = (index for index in (position - 1, position)
-                      if 0 <= index < len(canonical_numbers))
-            mapped_values[number] = canonical_numbers[min(
-                nearby,
-                key=lambda index: (abs(canonical_numbers[index] - number), index),
-            )]
-
-        canonicalized[column] = real_match_df[column].map(
-            lambda value: mapped_values.get(to_numeric_match_value(value), value)
-        )
-    return canonicalized
-
-
-def build_modal_real_value_map(source_inputs, canonicalized_real, feature_columns):
-    """Find the most frequent observed value for each column/canonical value.
-
-    Count simulation rows, not just distinct values. Only real values mapped to
-    that canonical value compete; ties prefer proximity to the canonical value,
-    then the earliest source row.
-    """
-    modal = {}
-    for column in feature_columns:
-        counts = defaultdict(lambda: defaultdict(int))
-        first_rows = {}
-        original_values = {}
-        for order, (canonical, observed) in enumerate(
-            zip(canonicalized_real[column], source_inputs[column])
-        ):
-            canonical_number = to_numeric_match_value(canonical)
-            observed_number = to_numeric_match_value(observed)
-            if (
-                canonical_number is None or not math.isfinite(canonical_number)
-                or observed_number is None or not math.isfinite(observed_number)
-            ):
-                continue
-            pair = (canonical_number, observed_number)
-            counts[canonical_number][observed_number] += 1
-            first_rows.setdefault(pair, order)
-            original_values.setdefault(pair, observed)
-
-        modal[column] = {}
-        for canonical_number, frequencies in counts.items():
-            chosen_number = min(
-                frequencies,
-                key=lambda number: (
-                    -frequencies[number],
-                    abs(number - canonical_number),
-                    first_rows[(canonical_number, number)],
-                ),
-            )
-            modal[column][canonical_number] = original_values[
-                (canonical_number, chosen_number)
-            ]
-    return modal
-
-
 def infer_sheet_value_from_event_history(
     source_real, real_match_df, real_idx, column, feature_columns, sheet_indices
 ):
@@ -728,61 +582,16 @@ def infer_sheet_value_from_event_history(
     return eligible[0] if len(eligible) == 1 else None
 
 
-def report_matched_slope_samples(matching_groups):
-    """Count slopes by sample count and exact Tr/duration sequence."""
-    slope_columns = list(COLUMNS[:COLUMNS.index(TR)])
-    slope_inputs = matching_groups[slope_columns].apply(pd.to_numeric, errors="coerce")
-    slope_indices = slope_inputs.groupby(
-        slope_columns, dropna=False, sort=False
-    ).indices
-    pattern_counts = defaultdict(int)
-
-    for indices in slope_indices.values():
-        events = tuple(sorted(
-            (
-                (to_numeric_match_value(tr), to_numeric_match_value(duration))
-                for tr, duration in matching_groups.iloc[indices][[TR, DURATION]]
-                .itertuples(index=False, name=None)
-            ),
-            key=lambda event: tuple(
-                value if value is not None and math.isfinite(value) else math.inf
-                for value in event
-            ),
-        ))
-        pattern_counts[(len(indices), events)] += 1
-
-    if not pattern_counts:
-        print("# slopes with matched samples: 0")
-        return
-
-    def number_label(value):
-        return f"{value:g}" if value is not None and math.isfinite(value) else "?"
-
-    for (sample_count, events), slope_count in sorted(
-        pattern_counts.items(), key=lambda item: (item[0][0], repr(item[0][1]))
-    ):
-        event_labels = ", ".join(
-            "-" if tr == -1 and duration == 0
-            else f"{number_label(tr)}/{number_label(duration)}"
-            for tr, duration in events
-        )
-        print(
-            f"# slopes with {sample_count} samples: {slope_count} "
-            f"(Tr/duration [h]: {event_labels})"
-        )
-
-
 def match_generated_combinations_to_simulations(table_path, source_real, matching_real):
-    """Match one generated combinations table to the available simulations.
+    """
+    Match canonical combinations to normalized real simulations.
 
-    MODE controls two independent choices:
-    - canonical_*: map source inputs to their nearest canonical values before matching;
-      real_*: match directly against the normalized real inputs.
-    - *_freq / *_near: choose the representative real input using frequency or
-      nearest-value logic, respectively.
+    Preserve every valid value from the selected source simulation. A missing
+    feature uses the observed value closest to its canonical value, restricted
+    to the selected simulation's Excel sheet. Targets are processed later.
     """
     table_df = pd.read_csv(table_path, dtype=object, keep_default_na=True)
-    expected_columns = list(COLUMNS)
+    expected_columns = list(COLUMNS.keys())
     missing_combinations = [col for col in expected_columns if col not in table_df.columns]
     if missing_combinations:
         raise ValueError(f"Missing columns in {table_path}:\n{missing_combinations}")
@@ -791,28 +600,11 @@ def match_generated_combinations_to_simulations(table_path, source_real, matchin
     source_df = source_real[expected_columns].copy()
     real_df = matching_real[expected_columns].copy()
 
+    # Keep exactly the same matching representation used by the original script.
     table_match_df = normalize_no_rain_event(table_df)
-    normalized_real_df = normalize_no_rain_event(real_df)
+    real_match_df = normalize_no_rain_event(real_df)
+
     feature_columns = expected_columns[:-4]
-
-    if USE_CANONICAL_MATCHING:
-        # Matching uses canonicalized simulations; exported inputs remain real values.
-        real_match_df = map_simulations_to_canonical(
-            table_match_df, normalized_real_df, feature_columns
-        )
-        source_inputs = source_df[feature_columns].copy()
-        source_inputs[[TR, RAIN, DURATION]] = normalized_real_df[[TR, RAIN, DURATION]]
-
-        if VALUE_SELECTION == "freq":
-            modal_real_values = build_modal_real_value_map(
-                source_inputs, real_match_df, feature_columns
-            )
-        else:
-            real_candidates = build_real_value_candidates(source_inputs, feature_columns)
-    else:
-        # Match directly using the normalized real values.
-        real_match_df = normalized_real_df
-
     rows_by_wildcards = defaultdict(list)
     for idx, row in table_df.iterrows():
         wildcard_columns = tuple(
@@ -832,29 +624,14 @@ def match_generated_combinations_to_simulations(table_path, source_real, matchin
     matched_group_rows = {}
     unmatched_combinations_indices = []
 
-    if USE_CANONICAL_MATCHING:
-        history_indices_by_column = {}
-
-        def matching_sheet_history(real_idx, column, sheet):
-            """Find same-slope sheet rows without rescanning a whole sheet per NaN."""
-            if column not in history_indices_by_column:
-                identifying_columns = [
-                    feature for feature in feature_columns
-                    if feature != column and feature not in (TR, RAIN, DURATION)
-                ]
-                grouped = defaultdict(list)
-                for other_idx, other_row in real_match_df.iterrows():
-                    key = build_match_key(other_row, identifying_columns)
-                    grouped[(source_real.at[other_idx, "Sheet"], key)].append(other_idx)
-                history_indices_by_column[column] = (identifying_columns, grouped)
-            identifying_columns, grouped = history_indices_by_column[column]
-            key = build_match_key(real_match_df.loc[real_idx], identifying_columns)
-            return grouped.get((sheet, key), ())
-    else:
-        sheet_indices = {
-            sheet: list(indices)
-            for sheet, indices in source_real.groupby("Sheet", sort=False).groups.items()
-        }
+    sheet_indices = {
+        sheet: list(indices)
+        for sheet, indices in source_real.groupby("Sheet", sort=False).groups.items()
+    }
+    sheet_value_candidates = {
+        sheet: build_real_value_candidates(source_df.loc[indices], feature_columns)
+        for sheet, indices in sheet_indices.items()
+    }
 
     for wildcard_columns in wildcard_groups:
         matching_columns = [col for col in feature_columns if col not in wildcard_columns]
@@ -874,6 +651,7 @@ def match_generated_combinations_to_simulations(table_path, source_real, matchin
         real_index = defaultdict(deque)
         indexed_real_feature_keys = set()
 
+        # Duplicate simulation keys retain the row with the lowest cleaned FoS.
         for real_idx in sorted(available_real_indices, key=lambda idx: (fos_priority(idx), idx)):
             real_row = real_match_df.loc[real_idx]
             full_feature_key = build_match_key(real_row, feature_columns)
@@ -910,6 +688,7 @@ def match_generated_combinations_to_simulations(table_path, source_real, matchin
                 unmatched_combinations_indices.append(table_idx)
                 continue
 
+            # Among valid matches, use the simulation with the minimum cleaned FoS.
             real_idx = min(
                 valid_candidates,
                 key=lambda idx: (
@@ -931,62 +710,30 @@ def match_generated_combinations_to_simulations(table_path, source_real, matchin
                 build_match_key(real_match_df.loc[real_idx], feature_columns)
             )
 
+            # Keep the matched simulation, including its original precision.
             output_row = source_df.loc[real_idx].copy()
             sheet = source_real.at[real_idx, "Sheet"]
-
-            if USE_CANONICAL_MATCHING:
-                # Targets stay from the selected simulation. Inputs are reconstructed
-                # from real values according to the selected canonical strategy.
-                for column in feature_columns:
-                    canonical_value = table_match_row[column]
-                    if str(canonical_value).strip() == "*" or pd.isna(canonical_value):
-                        canonical_value = real_match_df.at[real_idx, column]
-
-                    if VALUE_SELECTION == "freq":
-                        canonical_number = to_numeric_match_value(canonical_value)
-                        replacement = modal_real_values[column].get(canonical_number)
-                        if replacement is None and canonical_number is None:
-                            replacement = infer_sheet_value_from_event_history(
-                                source_real, real_match_df, real_idx, column,
-                                feature_columns,
-                                matching_sheet_history(real_idx, column, sheet),
-                            )
-                    else:
-                        replacement = closest_real_value(
-                            real_candidates, column, canonical_value
-                        )
-                        if (
-                            replacement is None
-                            and to_numeric_match_value(canonical_value) is None
-                        ):
-                            inferred = infer_sheet_value_from_event_history(
-                                source_real, real_match_df, real_idx, column,
-                                feature_columns,
-                                matching_sheet_history(real_idx, column, sheet),
-                            )
-                            replacement = closest_real_value(
-                                real_candidates, column, inferred
-                            )
-
-                    if replacement is not None:
-                        output_row[column] = replacement
-            else:
-                # Preserve valid source inputs. A missing input may only borrow
-                # a real value from the same sheet and the same identified slope.
-                for column in feature_columns:
-                    source_value = to_numeric_match_value(output_row[column])
-                    if source_value is not None and math.isfinite(source_value):
-                        continue
-                    canonical_value = table_match_row[column]
-                    if str(canonical_value).strip() == "*" or pd.isna(canonical_value):
-                        canonical_value = real_match_df.at[real_idx, column]
-                    replacement = closest_real_value_in_same_slope(
-                        source_df, real_match_df, sheet_indices[sheet],
-                        table_match_row, real_idx, column, canonical_value,
-                        feature_columns,
+            for column in feature_columns:
+                source_value = to_numeric_match_value(output_row[column])
+                if source_value is not None and math.isfinite(source_value):
+                    continue
+                canonical_value = table_match_row[column]
+                if str(canonical_value).strip() == "*" or pd.isna(canonical_value):
+                    canonical_value = real_match_df.at[real_idx, column]
+                replacement = closest_real_value(
+                    sheet_value_candidates[sheet], column, canonical_value
+                )
+                if (
+                    replacement is None
+                    and sheet_value_candidates[sheet][column][0]
+                    and to_numeric_match_value(canonical_value) is None
+                ):
+                    replacement = infer_sheet_value_from_event_history(
+                        source_real, real_match_df, real_idx, column,
+                        feature_columns, sheet_indices[sheet]
                     )
-                    if replacement is not None:
-                        output_row[column] = replacement
+                if replacement is not None:
+                    output_row[column] = replacement
 
             # All no-rain encodings mean the same base event: Tr=-1, hw=0, tw=0.
             if to_numeric_match_value(real_match_df.at[real_idx, RAIN]) == 0:
@@ -995,6 +742,8 @@ def match_generated_combinations_to_simulations(table_path, source_real, matchin
                 ]
 
             matched_rows[table_idx] = output_row
+            # Group by the canonical combination. Wildcard fields use the
+            # selected simulation's cleaned value to distinguish slope states.
             group_row = table_match_row[expected_columns].copy()
             for column in wildcard_columns:
                 resolved = real_match_df.at[real_idx, column]
@@ -1021,7 +770,6 @@ def match_generated_combinations_to_simulations(table_path, source_real, matchin
     ].copy()
 
     print("\n" + "=" * 70)
-    print(f"MODE: {MODE}")
     print(f"TABLE: {table_path}")
     print("-" * 70)
     print(f"Generated table rows : {len(table_df)}")
@@ -1030,7 +778,6 @@ def match_generated_combinations_to_simulations(table_path, source_real, matchin
     print(f"Missing table rows   : {len(mismatch_combinations_df)}")
     print(f"Unused real rows     : {len(mismatch_simulations_df)}")
     print("=" * 70)
-    report_matched_slope_samples(matching_groups)
     return output_df, mismatch_combinations_df, mismatch_simulations_df, matching_groups
 
 
@@ -1063,9 +810,9 @@ def annotate_missing_combinations(missing_df, condition):
     result.insert(2, "Missing source reason", "No corresponding simulation in the corrected source file")
     return result
 
-def save_mismatch_reports(results, output_dir):
+def save_mismatch_reports(results, output_dir=None):
     """Save aggregate mismatch reports and the inferred missing D.1 candidate block."""
-    report_dir = os.fspath(output_dir)
+    report_dir = DATASET_DIR if output_dir is None else os.fspath(output_dir)
     labeled = {condition: annotate_missing_combinations(missing_df, condition) for condition, (_, missing_df, _) in results.items()}
 
     all_missing = pd.concat(labeled.values(), ignore_index=True)
@@ -1175,21 +922,17 @@ def fill_missing_from_equal_neighbors(
     numeric: pd.DataFrame,
     condition: str,
     source_file: str,
-    grouping: pd.DataFrame,
+    grouping: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, list[dict]]:
     """Fill an interior gap only when adjacent values of the same slope agree."""
+    grouping = numeric if grouping is None else grouping
     identity_columns = list(grouping.columns[: grouping.columns.get_loc(TR)])
     sort_columns = [TR, DURATION]
     result = numeric.copy()
     audit = []
 
-    columns_to_fill = (
-        [column for column in TARGET_COLUMNS if column in numeric]
-        if USE_CANONICAL_MATCHING
-        else [column for column in numeric.columns if column not in (TR, RAIN, DURATION)]
-    )
-    for column in columns_to_fill:
-        if not numeric[column].isna().any():
+    for column in numeric.columns:
+        if column in (TR, RAIN, DURATION) or not numeric[column].isna().any():
             continue
         keys = [key for key in identity_columns if key != column]
         if not keys:
@@ -1228,24 +971,21 @@ def fill_missing_from_equal_neighbors(
 
 def fill_terminal_missing_targets(
     raw: pd.DataFrame,
+    numeric: pd.DataFrame,
     neighbor_filled: pd.DataFrame,
     condition: str,
     source_file: str,
-    grouping: pd.DataFrame,
+    grouping: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, list[dict]]:
     """Fill a final gap when every earlier rainy value agrees (not the base)."""
+    grouping = numeric if grouping is None else grouping
     identity_columns = list(grouping.columns[: grouping.columns.get_loc(TR)])
     sort_columns = [TR, DURATION]
     result = neighbor_filled.copy()
     audit = []
 
-    columns_to_fill = (
-        [column for column in TARGET_COLUMNS if column in result]
-        if USE_CANONICAL_MATCHING
-        else [column for column in result.columns if column not in (TR, RAIN, DURATION)]
-    )
-    for column in columns_to_fill:
-        if not result[column].isna().any():
+    for column in numeric.columns:
+        if column in (TR, RAIN, DURATION) or not result[column].isna().any():
             continue
         keys = [key for key in identity_columns if key != column]
         if not keys:
@@ -1349,79 +1089,15 @@ def replace_varying_slope_inputs_with_mode(
 
     return result, audit
 
-
-def replace_varying_slope_inputs_with_nearest(
-    numeric: pd.DataFrame,
-    grouping: pd.DataFrame,
-    condition: str,
-    source_file: str,
-) -> tuple[pd.DataFrame, list[dict]]:
-    """Give every event of a canonical slope its nearest observed input.
-
-    Only values observed within this slope compete. Rainfall fields and targets
-    are untouched. Equal-distance values use frequency, then source-row order.
-    A missing canonical value provides no anchor and is left unchanged.
-    """
-    input_columns = list(grouping.columns[:grouping.columns.get_loc(TR)])
-    result = numeric.copy()
-    audit = []
-
-    for positions in grouping.groupby(input_columns, dropna=False, sort=False).indices.values():
-        if len(positions) < 2:
-            continue
-        rows = grouping.index.take(positions).to_list()
-        for column in input_columns:
-            observed = result.loc[rows, column]
-            nonmissing = observed.dropna()
-            if nonmissing.empty or observed.nunique(dropna=False) == 1:
-                continue
-
-            canonical = grouping.at[rows[0], column]
-            if pd.isna(canonical):
-                continue
-            counts = nonmissing.value_counts(sort=False)
-            observed_values = nonmissing.to_list()
-            candidates = counts.index.to_list()
-            first_position = {
-                value: observed_values.index(value) for value in candidates
-            }
-            chosen = min(
-                candidates,
-                key=lambda value: (
-                    abs(float(value) - float(canonical)),
-                    -int(counts.loc[value]),
-                    first_position[value],
-                ),
-            )
-
-            support_rows = [row for row in rows if pd.notna(observed.at[row]) and observed.at[row] == chosen]
-            support_csv_rows = ";".join(str(int(row) + 2) for row in support_rows)
-            for row in rows:
-                old = observed.at[row]
-                if pd.notna(old) and old == chosen:
-                    continue
-                result.at[row, column] = chosen
-                audit.append({
-                    "Condition": condition, "Source file": source_file,
-                    "CSV row": int(row) + 2, "Column": column,
-                    "Action": "slope_input_nearest",
-                    "Old value": "" if pd.isna(old) else old,
-                    "New value": chosen,
-                    "Support count": len(support_rows),
-                    "Support CSV rows": support_csv_rows,
-                })
-
-    return result, audit
-
-
 def collect_remaining_missing_cells(
     raw: pd.DataFrame,
     result: pd.DataFrame,
     condition: str,
     source_file: str,
-    grouping: pd.DataFrame,
+    grouping: pd.DataFrame | None = None,
 ) -> list[dict]:
     """Report unresolved cells, omitting columns absent in every source row."""
+    grouping = result if grouping is None else grouping
     rows = []
     for column in result:
         if result[column].isna().all():
@@ -1436,110 +1112,92 @@ def collect_remaining_missing_cells(
 
 def preprocess_matched_dataframe(
     frame: pd.DataFrame, condition: str, source_file: str,
-    matching_groups: pd.DataFrame,
+    matching_groups: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, list[dict], list[dict]]:
-    """Parse matched simulations, fill supported gaps and finalize inputs."""
+    """Parse matches, fill supported gaps, and align intrinsic slope inputs.
+
+    The order is intentionally fixed:
+    1. parse the matched dataframe to numeric values;
+    2. fill interior gaps with equal adjacent values;
+    3. fill a final gap when all earlier rainy values agree;
+    4. replace inconsistent intrinsic inputs with each slope's modal value;
+    5. drop unused mechanical columns.
+    """
     raw, numeric, parsing_audit = parse_numeric_dataframe(frame, condition, source_file)
-    grouping = matching_groups.reset_index(drop=True).apply(
-        pd.to_numeric, errors="coerce"
+    grouping = (
+        matching_groups.reset_index(drop=True).apply(pd.to_numeric, errors="coerce")
+        if matching_groups is not None
+        else normalize_no_rain_event(numeric)
     )
+    if len(grouping) != len(numeric):
+        raise ValueError(f"{source_file}: grouping rows differ from matched simulation rows")
 
-    print(f"\nPreprocessing {condition} ({MODE})")
-    print(f"  Rows: {len(numeric)}")
-    missing_before = int(numeric.isna().sum().sum())
-    print(f"  Missing cells before fill: {missing_before}")
-
+    missing_before_neighbors = int(numeric.isna().sum().sum())
+    print(f"  Running fill_missing_from_equal_neighbors() on {source_file} "
+          f"({missing_before_neighbors} missing cells before fill)")
     neighbor_filled, neighbor_audit = fill_missing_from_equal_neighbors(
         raw, numeric, condition, source_file, grouping
     )
     missing_after_neighbors = int(neighbor_filled.isna().sum().sum())
-    print(
-        f"  Equal-neighbor fill: {missing_before - missing_after_neighbors} "
-        f"cells ({len(neighbor_audit)} audit records)"
-    )
+    print(f"    filled: {missing_before_neighbors - missing_after_neighbors} "
+          f"cells ({len(neighbor_audit)} audit records)")
 
+    print(f"  Running fill_terminal_missing_targets() on {source_file} "
+          f"({missing_after_neighbors} missing cells before fill)")
     filled, terminal_audit = fill_terminal_missing_targets(
-        raw, neighbor_filled, condition, source_file, grouping
+        raw, numeric, neighbor_filled, condition, source_file, grouping
     )
     missing_after_terminal = int(filled.isna().sum().sum())
-    print(
-        f"  Terminal fill: {missing_after_neighbors - missing_after_terminal} "
-        f"cells ({len(terminal_audit)} audit records)"
-    )
+    print(f"    filled: {missing_after_neighbors - missing_after_terminal} "
+          f"cells ({len(terminal_audit)} audit records)")
 
-    alignment_audit = []
-    if not USE_CANONICAL_MATCHING:
-        if VALUE_SELECTION == "freq":
-            filled, alignment_audit = replace_varying_slope_inputs_with_mode(
-                filled, grouping, condition, source_file
-            )
-        else:
-            filled, alignment_audit = replace_varying_slope_inputs_with_nearest(
-                filled, grouping, condition, source_file
-            )
-        print(f"  Aligned slope inputs ({VALUE_SELECTION}): {len(alignment_audit)} cells")
+    filled, mode_audit = replace_varying_slope_inputs_with_mode(
+        filled, grouping, condition, source_file
+    )
+    print(f"    aligned slope inputs: {len(mode_audit)} cells")
 
     if condition in {"D.1", "D.2"}:
         filled = filled.drop(columns=UNDRAINED_STRENGTH, errors="ignore")
     elif condition == "UN":
         filled = filled.drop(columns=[EFFECTIVE_COHESION, EFFECTIVE_ANGLE], errors="ignore")
 
-    unresolved = collect_remaining_missing_cells(
-        raw, filled, condition, source_file, grouping
-    )
-    audit = parsing_audit + neighbor_audit + terminal_audit + alignment_audit
+    unresolved = collect_remaining_missing_cells(raw, filled, condition, source_file, grouping)
+    if matching_groups is not None:
+        canonical = matching_groups.reset_index(drop=True)
+        feature_columns = list(COLUMNS)[:-4]
+        ordered_columns = []
+        for column in filled.columns:
+            ordered_columns.append(column)
+            # if column in feature_columns:
+            #     canonical_column = f"{column} [canonical]"
+            #     filled[canonical_column] = canonical[column].map(to_numeric_match_value)
+            #     ordered_columns.append(canonical_column)
+        filled = filled[ordered_columns]
+
+    audit = parsing_audit + neighbor_audit + terminal_audit + mode_audit
     return filled, audit, unresolved
 
-
-def report_slope_group_counts(
-    processed: pd.DataFrame, matching_groups: pd.DataFrame, condition: str
-) -> None:
-    """Report canonical slopes and distinct real-valued variants."""
-    intrinsic_columns = [
-        column for column in list(COLUMNS)[:list(COLUMNS).index(TR)]
-        if column in processed.columns
-    ]
-    canonical = matching_groups[intrinsic_columns].reset_index(drop=True).apply(
-        pd.to_numeric, errors="coerce"
-    )
-    actual = processed[intrinsic_columns].reset_index(drop=True)
-    canonical_ids = canonical.groupby(
-        intrinsic_columns, dropna=False, sort=False
-    ).ngroup()
-    actual_ids = actual.groupby(
-        intrinsic_columns, dropna=False, sort=False
-    ).ngroup()
-    distinct_outputs = pd.DataFrame({
-        "canonical_id": canonical_ids, "actual_id": actual_ids,
-    }).groupby("canonical_id")["actual_id"].nunique()
-    real_count = int(actual_ids.nunique())
-    split_count = int(distinct_outputs.gt(1).sum())
-    print(
-        f"{condition}: {len(distinct_outputs)} canonical slope groups, "
-        f"{real_count} real-valued slope groups, "
-        f"{split_count} canonical groups with multiple real variants"
-    )
-
 CONDITIONS = (
-    ("D.1", "D.1", "D.1_combinations.csv", "D.1_drained.csv", "D.1"),
-    ("D.2", "D.2", "D.2_combinations.csv", "D.2_drained.csv", "D.2"),
-    ("UN", "U", "U_combinations.csv", "U_undrained.csv", "U"),
+    ("D.1", "D.1", ("D.1_combinations.csv", "D.1_table.csv"), "D.1_drained.csv", "D.1"),
+    ("D.2", "D.2", ("D.2_combinations.csv", "D.2_table.csv"), "D.2_drained.csv", "D.2"),
+    ("UN", "U", ("U_combinations.csv", "U_table.csv"), "U_undrained.csv", "U"),
 )
 
 REMAINING_COLUMNS = ("Condition", "Source file", "CSV row", "Column", "Original value", "Tr", "Duration")
 
-def build_processed_datasets(table_dir: str):
+def build_processed_datasets(table_dir: Path):
     """Build all processed datasets and diagnostics entirely in memory."""
     results = {}
     audit_rows = []
     unresolved_rows = []
 
-    for condition, excel_prefix, table_name, dataset_name, _ in CONDITIONS:
-        table_path = os.path.join(table_dir, table_name)
-        if not os.path.isfile(table_path):
-            raise FileNotFoundError(
-                f"Missing combinations table for {condition}: {table_path}"
-            )
+    for condition, excel_prefix, table_names, dataset_name, _ in CONDITIONS:
+        table_path = next(
+            (table_dir / name for name in table_names if (table_dir / name).is_file()),
+            None,
+        )
+        if table_path is None:
+            raise FileNotFoundError(f"No combinations table for {condition}: {table_names}")
         # Load/correct the source simulations, match them to the generated table, then preprocess the matches.
         source_real, matching_real = load_source_and_matching_excel(find_source_excel(excel_prefix))
         matched, missing, unused, matching_groups = match_generated_combinations_to_simulations(
@@ -1548,8 +1206,6 @@ def build_processed_datasets(table_dir: str):
         processed, audit, unresolved = preprocess_matched_dataframe(
             matched, condition, dataset_name, matching_groups
         )
-        if USE_CANONICAL_MATCHING:
-            report_slope_group_counts(processed, matching_groups, condition)
         # Guard against accidental row creation or loss anywhere in the pipeline.
         if len(processed) != len(matched) or len(matched) + len(unused) != len(source_real):
             raise ValueError(f"{condition}: row counts changed unexpectedly")
@@ -1565,16 +1221,15 @@ def build_processed_datasets(table_dir: str):
 
     return results, audit_rows, unresolved_rows
 
-def save_processed_outputs(results, audit_rows, unresolved_rows, output_dir: str):
+def save_processed_outputs(results, audit_rows, unresolved_rows, output_dir: Path):
     """Save the final processed datasets and diagnostic reports."""
-    os.makedirs(output_dir, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
     for condition, _, _, dataset_name, report_prefix in CONDITIONS:
         processed, missing, unused = results[condition]
-        dataset_path = os.path.join(output_dir, dataset_name)
-        processed.to_csv(dataset_path, index=False)
-        missing.to_csv(os.path.join(output_dir, f"{report_prefix}_mismatch_combinations.csv"), index=False)
-        unused.to_csv(os.path.join(output_dir, f"{report_prefix}_mismatch_simulations.csv"), index=False)
-        print(f"Saved: {dataset_path}")
+        processed.to_csv(output_dir / dataset_name, index=False)
+        missing.to_csv(output_dir / f"{report_prefix}_mismatch_combinations.csv", index=False)
+        unused.to_csv(output_dir / f"{report_prefix}_mismatch_simulations.csv", index=False)
+        print(f"Saved: {output_dir / dataset_name}")
 
     # Store preprocessing actions separately from unresolved missing values.
     audit = pd.DataFrame(audit_rows, columns=AUDIT_COLUMNS)
@@ -1583,22 +1238,19 @@ def save_processed_outputs(results, audit_rows, unresolved_rows, output_dir: str
         "Next CSV row", "Next Tr", "Next duration", "Support count",
     ):
         audit[column] = pd.to_numeric(audit[column], errors="coerce").astype("Int64")
-    audit.to_csv(os.path.join(output_dir, "preprocessing_audit.csv"), index=False)
-    pd.DataFrame(unresolved_rows, columns=REMAINING_COLUMNS).to_csv(
-        os.path.join(output_dir, "remaining_nans.csv"), index=False
-    )
+    audit.to_csv(output_dir / "preprocessing_audit.csv", index=False)
+    pd.DataFrame(unresolved_rows, columns=REMAINING_COLUMNS).to_csv(output_dir / "remaining_nans.csv", index=False)
 
     save_mismatch_reports(results, output_dir=output_dir)
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--table-dir", default=DATASET_DIR)
+    parser.add_argument("--table-dir", type=Path, default=Path(DATASET_DIR))
+    parser.add_argument("--output-dir", type=Path, default=Path(DATASET_DIR))
     args = parser.parse_args()
 
-    print(f"Selected MODE: {MODE}")
-    print(f"Output directory: {OUTPUT_DIR}")
     results, audit_rows, unresolved_rows = build_processed_datasets(args.table_dir)
-    save_processed_outputs(results, audit_rows, unresolved_rows, OUTPUT_DIR)
+    save_processed_outputs(results, audit_rows, unresolved_rows, args.output_dir)
 
 if __name__ == "__main__":
     main()

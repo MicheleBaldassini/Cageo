@@ -278,32 +278,8 @@ def get_water_combinations(geometry, condition):
     intermediate = {"Initial piezometric surface depth - upstream [m]": "*",
                     "Initial piezometric surface depth - downstream [m]": "*"}
     
-    alpha = geometry["Slope angle [°]"]
-    length = geometry["Slope length [m]"]
-    soil_depth = geometry["Soil depth upstream [m]"]
-    slope_height = geometry["Slope height [m]"]
-
-    # The source workbooks do not cross every geometry with all three water
-    # positions. These rules reproduce their block design. D.1 also includes
-    # the inferred missing Slope50_l80_b400_hm1_25 low-water block.
-    if condition == "D.1":
-        if soil_depth == 2:
-            return [low]
-        if alpha == 20:
-            if length == 20:
-                return [high]
-            if length == 40:
-                return [high, intermediate] if soil_depth > slope_height else [high]
-            return [high, intermediate]
-        if alpha == 50 and length == 80:
-            return [low]
-        return [high, low, intermediate]
-
-    if condition == "UN":
-        if alpha == 20:
-            if length in (20, 40):
-                return [high, low, intermediate] if soil_depth > slope_height else [high]
-            return [high, intermediate]
+    # D.1 and UN use high, low and intermediate
+    if condition in ["D.1", "UN"]:
         return [high, low, intermediate]
     
     # D.2 only uses zw3init = intermediate
@@ -362,9 +338,7 @@ if __name__ == "__main__":
     assert len(get_mechanical_combinations("D.1")) == 13
     assert len(get_mechanical_combinations("D.2")) == 25
     assert len(get_mechanical_combinations("UN")) == 11
-    assert len(D1) == 15600
-    assert len(D2) == 5775
-    assert len(U) == 4268
+    # assert len(D1_rain_only) == 16848
 
     assert set(D1["Return period of precipitation [years]"]) == {-1, 30, 200, 500}
     assert set(D2["Return period of precipitation [years]"]) == {-1, 30, 200, 500}

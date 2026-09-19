@@ -28,7 +28,6 @@ from config import (
     SAMPLE_WEIGHTS,
 )
 from assets import (
-    print_slope_sample,
     sanitize_params,
     get_slope_groups,
     get_train_processed_indices,
@@ -36,6 +35,7 @@ from assets import (
     get_sample_weights,
     AutoWeightedRegressor
 )
+from slope_sample_report import print_slope_sample_breakdown
 
 # Define the number of outer splits for the nested cross-validation process.
 OUTER_FOLDS = 10
@@ -260,11 +260,11 @@ if __name__ == "__main__":
                 f"Train: {len(first_train_processed_idx)} samples ({first_train_groups} slopes), "
                 f"Val: {len(first_val_idx)} samples ({first_val_groups} slopes)"
             )
-            print_slope_sample(
+            print_slope_sample_breakdown(
                 df_train.loc[first_train_processed_idx],
                 slope_groups_train.loc[first_train_processed_idx], "First fold train"
             )
-            print_slope_sample(
+            print_slope_sample_breakdown(
                 df_train.iloc[first_val_idx], slope_groups_train.iloc[first_val_idx],
                 "First fold validation"
             )
